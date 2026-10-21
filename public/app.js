@@ -2,7 +2,7 @@
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const view = $('#view');
-const state = { name: 'صالون ياسمين', currency: '₪', date: ymd(new Date()) };
+const state = { name: 'صالون ياسمين', currency: '₪', date: ymd(new Date()), openHour: 9, closeHour: 21, slotMinutes: 30 };
 
 const STATUS_LABEL = { booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
 const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, notes: renderNotes };
@@ -31,12 +31,23 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+const setOffline = (off) => $('#offline').classList.toggle('hidden', !off);
+addEventListener('offline', () => setOffline(true));
+addEventListener('online', () => { setOffline(false); refresh(); });
+
 async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    setOffline(true);
+    throw new Error('لا يوجد اتصال بالإنترنت');
+  }
+  setOffline(false);
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== '/login') { showLogin(); throw new Error(data.error || 'سجّل الدخول'); }
   if (!res.ok) throw new Error(data.error || 'حدث خطأ');
@@ -46,6 +57,22 @@ async function api(path, { method = 'GET', body } = {}) {
 // run an action, show errors as toast
 async function attempt(fn) {
   try { return await fn(); } catch (e) { toast(e.message); return null; }
+}
+
+// ---------- themed confirm (big touch buttons, replaces window.confirm) ----------
+function ask(message, { yes = 'نعم', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const box = $('#ask');
+    $('#askText').textContent = message;
+    const ok = $('#askYes');
+    ok.textContent = yes;
+    ok.classList.toggle('btn-danger-solid', danger);
+    box.classList.remove('hidden');
+    const done = (v) => { box.classList.add('hidden'); ok.onclick = $('#askNo').onclick = box.onclick = null; resolve(v); };
+    ok.onclick = () => done(true);
+    $('#askNo').onclick = () => done(false);
+    box.onclick = (e) => { if (e.target.hasAttribute('data-close')) done(false); };
+  });
 }
 
 // ---------- modal ----------
@@ -58,7 +85,7 @@ function openModal(html, onMount) {
 }
 const closeModal = () => $('#modal').classList.add('hidden');
 $('#modal').addEventListener('click', (e) => { if (e.target.hasAttribute('data-close')) closeModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#ask').classList.contains('hidden')) $('#askNo').click(); else closeModal(); } });
 
 // ---------- auth ----------
 function showLogin() {
@@ -85,14 +112,17 @@ $('#loginForm').addEventListener('submit', async (e) => {
 $('#logout').addEventListener('click', async () => { await api('/logout', { method: 'POST' }); showLogin(); });
 
 // ---------- routing ----------
-function route() {
+async function route({ silent = false } = {}) {
   const name = (location.hash.replace('#/', '') || 'today').split('?')[0];
   const key = ROUTES[name] ? name : 'today';
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
-  return attempt(() => ROUTES[key]());
+  view.classList.toggle('no-anim', silent);   // background refreshes shouldn't replay the entrance animation
+  if (!silent) return attempt(() => ROUTES[key]());
+  const y = window.scrollY;
+  try { await ROUTES[key](); window.scrollTo(0, y); } catch { /* the offline banner already tells the story */ }
 }
-window.addEventListener('hashchange', route);
-const reload = () => route();
+window.addEventListener('hashchange', () => route());
+const reload = () => route({ silent: true });
 
 // ---------- shared pieces ----------
 function emptyState(text) {
@@ -180,7 +210,12 @@ async function renderToday() {
                 <button class="btn icon-btn" data-nav="1" title="اليوم التالي">‹</button>
                 ${isToday ? '' : '<button class="btn btn-sm" data-today>اليوم</button>'}`,
     })}
-    <div class="stats">
+    <div class="today-layout">
+    <section class="today-main">
+      <div class="section-title"><h3>مواعيد اليوم</h3></div>
+      <div class="list">${list.length ? list.map((a) => apptCard(a)).join('') : emptyState('لا توجد مواعيد في هذا اليوم')}</div>
+    </section>
+    <aside class="today-side"><div class="stats">
       <div class="card stat"><b>${stats.total}</b><span>إجمالي الحجوزات</span></div>
       <div class="card stat"><b>${stats.came}</b><span>حضروا</span></div>
       <div class="card stat"><b>${stats.booked}</b><span>بانتظارهم</span></div>
@@ -188,9 +223,8 @@ async function renderToday() {
       <div class="card stat"><b>${stats.walk_in}</b><span>زبائن مفاجئون</span></div>
       <div class="card stat"><b>${fmtNum(stats.collected)}</b><span>محصّل اليوم (${esc(state.currency)})</span></div>
       <div class="card stat warn"><b>${fmtNum(stats.outstanding)}</b><span>متبقي على الزبائن (${esc(state.currency)})</span></div>
-    </div>
-    <div class="section-title"><h3>مواعيد اليوم</h3></div>
-    <div class="list">${list.length ? list.map((a) => apptCard(a)).join('') : emptyState('لا توجد مواعيد في هذا اليوم')}</div>`;
+    </div></aside>
+    </div>`;
 
   view.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => { state.date = addDays(state.date, Number(b.dataset.nav)); reload(); }));
   $('[data-today]', view)?.addEventListener('click', () => { state.date = ymd(new Date()); reload(); });
@@ -288,7 +322,8 @@ async function renderNotes() {
             <button class="btn btn-danger btn-sm" data-n="del">حذف</button>
           </div>
         </article>`).join('') : emptyState('لا توجد ملاحظات')}
-    </div>`;
+    </div>
+    <div class="backup"><a class="btn btn-sm" href="/api/backup" download>⬇ تحميل نسخة احتياطية من كل البيانات</a></div>`;
 
   $('#noteForm', view).addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -300,7 +335,7 @@ async function renderNotes() {
     el.addEventListener('click', async (e) => {
       const act = e.target.closest('[data-n]')?.dataset.n;
       if (!act) return;
-      if (act === 'del') { if (!confirm('حذف هذه الملاحظة؟')) return; await attempt(() => api(`/notes/${id}`, { method: 'DELETE' })); }
+      if (act === 'del') { if (!(await ask('حذف هذه الملاحظة؟', { yes: 'حذف', danger: true }))) return; await attempt(() => api(`/notes/${id}`, { method: 'DELETE' })); }
       if (act === 'pin') await attempt(() => api(`/notes/${id}`, { method: 'PATCH', body: { pinned: !n.pinned } }));
       if (act === 'done') await attempt(() => api(`/notes/${id}`, { method: 'PATCH', body: { done: e.target.checked } }));
       reload();
@@ -315,18 +350,19 @@ function openAppointmentForm(a = null, defaults = {}) {
   openModal(`
     <form id="apptForm">
       <h3>${isEdit ? 'تعديل الموعد' : 'حجز جديد'}</h3>
-      <label class="field"><span>رقم الزبون</span><input type="tel" name="phone" value="${esc(v.phone)}" placeholder="مثال: 0790000000"></label>
+      <label class="field"><span>رقم الزبون</span><input type="tel" inputmode="tel" name="phone" value="${esc(v.phone)}" placeholder="مثال: 0790000000"></label>
       <label class="field"><span>اسم الزبون *</span><input name="client_name" value="${esc(v.client_name)}" required maxlength="80"></label>
       <div class="row">
         <label class="field"><span>التاريخ *</span><input type="date" name="date" value="${esc(v.date)}" required></label>
         <label class="field"><span>الساعة *</span><input type="time" name="time" value="${esc(v.time)}" required></label>
       </div>
+      <div class="slots" id="slots" aria-label="ساعات سريعة"></div>
       <label class="field"><span>الخدمة</span><input name="service" value="${esc(v.service)}" maxlength="120" placeholder="قص، صبغة، تسريحة…"></label>
       <div class="row">
-        <label class="field"><span>السعر (${esc(state.currency)})</span><input type="number" name="price" min="0" step="0.01" value="${esc(v.price)}"></label>
+        <label class="field"><span>السعر (${esc(state.currency)})</span><input type="number" inputmode="decimal" name="price" min="0" step="0.01" value="${esc(v.price)}"></label>
         ${isEdit
           ? `<label class="field"><span>الحالة</span><select name="status">${Object.entries(STATUS_LABEL).map(([k, l]) => `<option value="${k}" ${v.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
-          : `<label class="field"><span>عربون مدفوع</span><input type="number" name="deposit" min="0" step="0.01" placeholder="0"></label>`}
+          : `<label class="field"><span>عربون مدفوع</span><input type="number" inputmode="decimal" name="deposit" min="0" step="0.01" placeholder="0"></label>`}
       </div>
       <label class="field"><span>ملاحظة</span><textarea name="note" maxlength="1000">${esc(v.note)}</textarea></label>
       <p class="error" id="formError" role="alert"></p>
@@ -338,6 +374,32 @@ function openAppointmentForm(a = null, defaults = {}) {
     </form>`, (card) => {
     const form = $('#apptForm', card);
     card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
+
+    // one-tap time slots; booked ones are dimmed but still selectable
+    const slotsEl = $('#slots', card);
+    const times = [];
+    for (let m = state.openHour * 60; m <= state.closeHour * 60 - state.slotMinutes; m += state.slotMinutes) {
+      times.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+    }
+    let taken = new Set();
+    const paintSlots = () => {
+      slotsEl.innerHTML = times.map((t) => `<button type="button" class="slot ${taken.has(t) ? 'taken' : ''} ${form.time.value === t ? 'active' : ''}" data-t="${t}" ${taken.has(t) ? 'title="محجوز"' : ''}>${t}</button>`).join('');
+    };
+    const loadTaken = async () => {
+      try {
+        const day = await api(`/appointments?date=${form.date.value}`);
+        taken = new Set(day.filter((x) => x.id !== a?.id && !['cancelled', 'no_show'].includes(x.status)).map((x) => x.time));
+      } catch { taken = new Set(); }
+      paintSlots();
+    };
+    slotsEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-t]');
+      if (b) { form.time.value = b.dataset.t; paintSlots(); }
+    });
+    form.date.addEventListener('change', loadTaken);
+    form.time.addEventListener('input', paintSlots);
+    paintSlots();
+    loadTaken();
 
     // typing a known phone number fills in the name
     form.phone.addEventListener('change', async () => {
@@ -353,7 +415,7 @@ function openAppointmentForm(a = null, defaults = {}) {
       try {
         if (!isEdit) {
           const same = (await api(`/appointments?date=${body.date}`)).filter((x) => x.time === body.time && !['cancelled', 'no_show'].includes(x.status));
-          if (same.length && !confirm(`يوجد حجز آخر الساعة ${body.time} (${same[0].client_name}). هل تريد المتابعة؟`)) return;
+          if (same.length && !(await ask(`يوجد حجز آخر الساعة ${body.time} (${same[0].client_name}). هل تريد المتابعة؟`, { yes: 'متابعة' }))) return;
         }
         await api(isEdit ? `/appointments/${a.id}` : '/appointments', { method: isEdit ? 'PATCH' : 'POST', body });
         closeModal();
@@ -364,7 +426,7 @@ function openAppointmentForm(a = null, defaults = {}) {
     });
 
     $('#delAppt', card)?.addEventListener('click', async () => {
-      if (!confirm('حذف هذا الموعد نهائياً مع دفعاته؟')) return;
+      if (!(await ask('حذف هذا الموعد نهائياً مع دفعاته؟', { yes: 'حذف', danger: true }))) return;
       if (await attempt(() => api(`/appointments/${a.id}`, { method: 'DELETE' }))) { closeModal(); toast('تم الحذف'); reload(); }
     });
   });
@@ -376,11 +438,11 @@ function openWalkin() {
       <h3>زبون مفاجئ</h3>
       <p class="muted" style="margin-top:-.6rem">يُسجَّل كحاضر الآن (${esc(nowTime())})</p>
       <label class="field"><span>الاسم</span><input name="client_name" maxlength="80" placeholder="اختياري"></label>
-      <label class="field"><span>رقم الزبون</span><input type="tel" name="phone" placeholder="اختياري"></label>
+      <label class="field"><span>رقم الزبون</span><input type="tel" inputmode="tel" name="phone" placeholder="اختياري"></label>
       <label class="field"><span>الخدمة</span><input name="service" maxlength="120"></label>
       <div class="row">
-        <label class="field"><span>السعر (${esc(state.currency)})</span><input type="number" name="price" min="0" step="0.01"></label>
-        <label class="field"><span>دفع الآن</span><input type="number" name="deposit" min="0" step="0.01"></label>
+        <label class="field"><span>السعر (${esc(state.currency)})</span><input type="number" inputmode="decimal" name="price" min="0" step="0.01"></label>
+        <label class="field"><span>دفع الآن</span><input type="number" inputmode="decimal" name="deposit" min="0" step="0.01"></label>
       </div>
       <label class="field"><span>ملاحظة</span><textarea name="note" maxlength="1000"></textarea></label>
       <p class="error" id="formError" role="alert"></p>
@@ -427,7 +489,7 @@ async function openPayments(id) {
     </div>
     <form id="payForm" style="margin-top:1rem">
       <div class="row">
-        <label class="field"><span>دفعة جديدة (${esc(state.currency)})</span><input type="number" name="amount" min="0.01" step="0.01" required value="${a.remaining > 0 ? a.remaining : ''}"></label>
+        <label class="field"><span>دفعة جديدة (${esc(state.currency)})</span><input type="number" inputmode="decimal" name="amount" min="0.01" step="0.01" required value="${a.remaining > 0 ? a.remaining : ''}"></label>
         <div style="align-self:end;margin-bottom:.9rem"><button class="btn btn-primary btn-block" type="submit">تسجيل دفعة</button></div>
       </div>
       <p class="error" id="formError" role="alert"></p>
@@ -443,7 +505,7 @@ async function openPayments(id) {
       } catch (err) { $('#formError').textContent = err.message; }
     });
     card.querySelectorAll('[data-delpay]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('حذف هذه الدفعة؟')) return;
+      if (!(await ask('حذف هذه الدفعة؟', { yes: 'حذف', danger: true }))) return;
       if (await attempt(() => api(`/payments/${b.dataset.delpay}`, { method: 'DELETE' }))) openPayments(id);
     }));
   });
@@ -486,15 +548,68 @@ async function openClientHistory(c) {
 document.querySelectorAll('[data-new]').forEach((b) => b.addEventListener('click', () => openAppointmentForm()));
 document.querySelectorAll('[data-walkin]').forEach((b) => b.addEventListener('click', openWalkin));
 
+// ---------- always-on tablet behaviour ----------
+const pref = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+// keep the screen awake while the page is open (needs HTTPS and a browser that supports it)
+let wakeLock = null;
+const wantsWake = () => pref.get('wake') !== 'off';
+function paintUtils() {
+  $('#wakeBtn').classList.toggle('off', !wantsWake());
+  $('#fxBtn').classList.toggle('off', !window.salonFx?.enabled);
+}
+async function acquireWake() {
+  if (!wantsWake() || !navigator.wakeLock || document.hidden || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch { /* denied or unsupported: the tablet's own screen-timeout setting still applies */ }
+}
+$('#wakeBtn').addEventListener('click', () => {
+  const on = !wantsWake();
+  pref.set('wake', on ? 'on' : 'off');
+  if (on) { acquireWake(); toast(navigator.wakeLock ? 'الشاشة ستبقى مفتوحة' : 'المتصفح لا يدعم إبقاء الشاشة — فعّلها من إعدادات التابلت'); }
+  else { wakeLock?.release(); toast('عاد انطفاء الشاشة التلقائي'); }
+  paintUtils();
+});
+$('#fxBtn').addEventListener('click', () => {
+  window.salonFx?.setEnabled(!window.salonFx.enabled);
+  paintUtils();
+});
+
+// quietly re-read the data so a second device (or a new day) shows up without touching anything
+let lastDay = ymd(new Date());
+function refresh() {
+  if (document.hidden || $('#app').classList.contains('hidden')) return;
+  const today = ymd(new Date());
+  if (today !== lastDay) {                        // midnight passed while the tablet sat open
+    if (state.date === lastDay) state.date = today;
+    lastDay = today;
+  }
+  const busy = !$('#modal').classList.contains('hidden') || !$('#ask').classList.contains('hidden');
+  const typing = [...view.querySelectorAll('input, textarea')].some((el) => el.value !== el.defaultValue);
+  if (busy || typing) return;
+  route({ silent: true });
+}
+setInterval(refresh, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { acquireWake(); refresh(); } });
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 (async function boot() {
   try {
     const cfg = await fetch('/api/config').then((r) => r.json());
     state.name = cfg.name;
-    if (cfg.currency) state.currency = cfg.currency;
+    for (const k of ['currency', 'openHour', 'closeHour', 'slotMinutes']) if (cfg[k]) state[k] = cfg[k];
     document.title = cfg.name;
     document.querySelectorAll('.brand-name').forEach((el) => { el.textContent = cfg.name; });
     cfg.authed ? showApp() : showLogin();
   } catch {
     showLogin();
   }
+  paintUtils();
+  acquireWake();
 })();

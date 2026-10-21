@@ -302,20 +302,10 @@ input[type=date], input[type=time], input[type=tel], input[type=number] { direct
   .hd-heart { left: 46%; top: 22px; }
   .hd-spark.s1 { left: 12%; }
   .login-deco { width: 46vw; }
-  .top-actions { display: none; }
-  .container { padding-bottom: 6.5rem; }
-  .bottom-bar {
-    display: flex; gap: .6rem; position: fixed; inset-inline: 0; bottom: 0; z-index: 25;
-    padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom));
-    background: rgba(255,255,255,.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-top: 1px solid var(--silver-200);
-  }
-  .bottom-bar .btn { flex: 1; }
   .stats { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
   .stat { padding: .7rem .3rem; }
   .stat b { font-size: 1.5rem; }
   .stat span { font-size: .75rem; }
-  .toast { bottom: 5rem; }
   .row { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -340,3 +330,126 @@ input[type=date], input[type=time], input[type=tel], input[type=number] { direct
   75% { transform: translate(40px, 30px) rotate(14deg); }
   100% { transform: translate(0, 0) rotate(-12deg); }
 }
+
+/* =====================================================================
+   Tablet-first layer (the app lives on the salon tablet)
+   ===================================================================== */
+html { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
+button, a, input, select, textarea, label { touch-action: manipulation; }
+
+/* top-bar utilities */
+.utils { display: flex; gap: .4rem; }
+.util { background: var(--silver-100); color: var(--rose-600); box-shadow: inset 0 0 0 1px var(--silver-300); border: 0; cursor: pointer; }
+.util.off { color: var(--silver-400); background: transparent; }
+.util svg { display: block; }
+
+.offline {
+  position: fixed; inset-inline: 0; top: 0; z-index: 80; text-align: center; padding: .55rem 1rem;
+  background: var(--warn); color: #fff; font-weight: 500;
+}
+
+.modal-top { z-index: 70; }
+.ask-card { width: min(420px, 100%); text-align: center; }
+.ask-card p { font-family: var(--serif); font-size: 1.35rem; margin: .3rem 0 1.1rem; }
+.ask-card .modal-actions { justify-content: center; }
+.ask-card .btn { min-width: 120px; }
+.btn-danger-solid { background: var(--danger) !important; color: #fff !important; box-shadow: none !important; }
+
+.no-anim .card, .no-anim .hero { animation: none; }
+.backup { margin-top: 1.4rem; text-align: center; }
+
+/* quick time slots */
+.slots { display: flex; flex-wrap: wrap; gap: .4rem; margin: -.2rem 0 1rem; max-height: 8.5rem; overflow: auto; }
+.slot {
+  font: inherit; font-size: .92rem; direction: ltr; cursor: pointer; border: 0; border-radius: 999px; padding: .4rem .85rem;
+  background: var(--silver-100); color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--silver-300);
+}
+.slot.taken { opacity: .45; text-decoration: line-through; }
+.slot.active { background: var(--rose-grad); color: #fff; box-shadow: var(--shadow); opacity: 1; text-decoration: none; }
+
+/* today: appointments + side stats */
+.today-layout { display: grid; gap: 1rem; }
+.today-side { order: -1; }
+.today-main .section-title:first-child { margin-top: .4rem; }
+
+/* wider canvas than the old 1100px: tablets are 1024–1366 landscape */
+@media (min-width: 721px) {
+  .container { max-width: 1320px; padding-inline: 1.4rem; }
+  .topbar-inner { max-width: 1320px; padding-inline: 1.4rem; }
+  .modal-card { width: min(600px, 100%); max-height: 92vh; max-height: 92dvh; }
+}
+
+/* landscape tablet: list on the right, stats pinned on the left */
+@media (min-width: 900px) {
+  .today-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 1.4rem; }
+  .today-side { order: 0; position: sticky; top: 5.2rem; }
+  .today-side .stats { grid-template-columns: 1fr 1fr; margin-bottom: 0; }
+  .today-side .stat:nth-child(1), .today-side .stat:nth-child(6), .today-side .stat:nth-child(7) { grid-column: span 2; }
+  .hero { min-height: 128px; padding: 1.3rem 1.6rem; }
+}
+
+/* tablets in either orientation and anything touch-driven */
+@media (max-width: 1100px) and (min-width: 721px) {
+  .nav a { padding: .5rem 1rem; }
+  .logo .brand-name { font-size: 1.4rem; white-space: nowrap; }
+}
+@media (max-width: 1180px) and (min-width: 901px) {
+  .top-actions .btn { padding-inline: 1rem; }
+  .nav a { padding-inline: .8rem; }
+}
+
+/* narrower tablets (portrait, or landscape with the side panel): action buttons sit under the details */
+@media (min-width: 721px) and (max-width: 1199px) {
+  .appt { grid-template-columns: 84px 1fr; row-gap: .8rem; }
+  .appt .actions { grid-column: 1 / -1; max-width: none; justify-content: flex-start; padding-top: .8rem; border-top: 1px dashed var(--silver-300); }
+  .hd-fly { display: none; }
+}
+@media (min-width: 900px) and (max-width: 1199px) {
+  .today-layout { grid-template-columns: minmax(0, 1fr) 250px; }
+  .today-side .stat { padding: .7rem .4rem; }
+  .today-side .stat b { font-size: 1.6rem; }
+}
+/* portrait tablet: stats in one compact row */
+@media (min-width: 721px) and (max-width: 899px) {
+  .stats { grid-template-columns: repeat(7, 1fr); gap: .5rem; }
+  .stat { padding: .8rem .2rem; }
+  .stat b { font-size: 1.6rem; }
+  .stat span { font-size: .78rem; display: block; line-height: 1.3; }
+}
+
+/* portrait tablet + phone: quick actions move to a bottom bar within thumb reach */
+@media (max-width: 900px) {
+  .top-actions { display: none; }
+  .container { padding-bottom: 7rem; }
+  .bottom-bar {
+    display: flex; justify-content: center; gap: .8rem; position: fixed; inset-inline: 0; bottom: 0; z-index: 25;
+    padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom));
+    background: rgba(255,255,255,.9); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--silver-200);
+  }
+  .bottom-bar .btn { flex: 1; max-width: 380px; min-height: 52px; font-size: 1.05rem; }
+  .toast { bottom: 5.5rem; }
+}
+
+/* big, forgiving touch targets (tablet use at arm's length) */
+@media (pointer: coarse) {
+  .btn { min-height: 46px; padding: .65rem 1.5rem; }
+  .btn-sm { min-height: 44px; padding: .5rem 1.15rem; font-size: .98rem; }
+  .icon-btn { width: 46px; height: 46px; }
+  input, select, textarea { min-height: 50px; font-size: 1rem; padding: .7rem 1rem; }
+  textarea { min-height: 90px; }
+  .nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .check { width: 30px; height: 30px; }
+  .slot { min-height: 42px; padding-inline: 1rem; }
+  .actions { gap: .55rem; }
+  .appt-meta a { padding: .25rem .1rem; }
+  .field > span { font-size: .92rem; }
+  .pay-row .btn { min-height: 40px; }
+}
+@media (pointer: coarse) and (min-width: 721px) {
+  html { font-size: 17px; }
+  .appt-name { font-size: 1.2rem; }
+  .appt-time { font-size: 1.7rem; }
+  .actions { max-width: 330px; }
+}
+@media (max-width: 720px) { .row { grid-template-columns: 1fr; } }

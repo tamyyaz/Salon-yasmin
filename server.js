@@ -13,7 +13,10 @@ const SALON_NAME = process.env.SALON_NAME || 'صالون ياسمين';
 const CURRENCY = process.env.CURRENCY || '₪';
 const PASSWORD = process.env.SALON_PASSWORD;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const SESSION_DAYS = 14;
+const SESSION_DAYS = 90; // the salon tablet stays signed in; the cookie is renewed while in use
+const OPEN_HOUR = Number(process.env.OPEN_HOUR) || 9;
+const CLOSE_HOUR = Number(process.env.CLOSE_HOUR) || 21;
+const SLOT_MINUTES = Number(process.env.SLOT_MINUTES) || 30;
 const COOKIE = 'salon_session';
 
 if (!PASSWORD || PASSWORD.length < 6) {
@@ -108,6 +111,17 @@ const withBalance = (row) => ({
   remaining: ['cancelled', 'no_show'].includes(row.status) ? 0 : Math.max(0, row.price - row.paid),
 });
 
+// ---------- backups ----------
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_KEEP = 14;
+
+async function makeBackup() {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  await db.backup(path.join(BACKUP_DIR, `salon-${new Date().toISOString().slice(0, 10)}.db`));
+  const old = fs.readdirSync(BACKUP_DIR).filter((f) => /^salon-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().slice(0, -BACKUP_KEEP);
+  for (const f of old) fs.rmSync(path.join(BACKUP_DIR, f), { force: true });
+}
+
 // ---------- validation ----------
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -180,10 +194,12 @@ function recordFailure(ip) {
 }
 
 const isAuthed = (req) => validToken(readCookie(req, COOKIE));
+const sessionCookie = (req, token, maxAge) => `${COOKIE}=${token}; Max-Age=${maxAge}; ${cookieOpts(req)}`;
 const cookieOpts = (req) =>
   `HttpOnly; SameSite=Strict; Path=/${req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 
-app.get('/api/config', (req, res) => res.json({ name: SALON_NAME, currency: CURRENCY, authed: isAuthed(req) }));
+app.get('/healthz', (req, res) => res.json({ ok: true }));
+app.get('/api/config', (req, res) => res.json({ name: SALON_NAME, currency: CURRENCY, openHour: OPEN_HOUR, closeHour: CLOSE_HOUR, slotMinutes: SLOT_MINUTES, authed: isAuthed(req) }));
 
 app.post('/api/login', (req, res) => {
   const ip = req.ip;
@@ -194,18 +210,25 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'كلمة السر غير صحيحة' });
   }
   attempts.delete(ip);
-  res.set('Set-Cookie', `${COOKIE}=${makeToken()}; Max-Age=${SESSION_DAYS * 86400}; ${cookieOpts(req)}`);
+  res.set('Set-Cookie', sessionCookie(req, makeToken(), SESSION_DAYS * 86400));
   res.json({ ok: true });
 });
 
 app.post('/api/logout', (req, res) => {
-  res.set('Set-Cookie', `${COOKIE}=; Max-Age=0; ${cookieOpts(req)}`);
+  res.set('Set-Cookie', sessionCookie(req, '', 0));
   res.json({ ok: true });
 });
 
 // everything below requires login
-const requireAuth = (req, res, next) =>
-  isAuthed(req) ? next() : res.status(401).json({ error: 'سجّل الدخول أولاً' });
+const requireAuth = (req, res, next) => {
+  const token = readCookie(req, COOKIE);
+  if (!validToken(token)) return res.status(401).json({ error: 'سجّل الدخول أولاً' });
+  // sliding session: reissue once the cookie is more than a day old
+  if (Number(token.split('.')[0]) - Date.now() < (SESSION_DAYS - 1) * 864e5) {
+    res.set('Set-Cookie', sessionCookie(req, makeToken(), SESSION_DAYS * 86400));
+  }
+  next();
+};
 const api = express.Router();
 api.use(requireAuth);
 
@@ -351,6 +374,14 @@ api.get('/stats', (req, res) => {
   });
 });
 
+// --- backup download ---
+api.get('/backup', async (req, res) => {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const tmp = path.join(BACKUP_DIR, `download-${crypto.randomBytes(6).toString('hex')}.tmp`);
+  await db.backup(tmp);
+  res.download(tmp, `salon-${new Date().toISOString().slice(0, 10)}.db`, () => fs.rmSync(tmp, { force: true }));
+});
+
 // --- notes ---
 api.get('/notes', (req, res) => {
   res.json(db.prepare('SELECT * FROM notes ORDER BY done, pinned DESC, id DESC LIMIT 500').all()
@@ -385,7 +416,13 @@ api.delete('/notes/:id', (req, res) => {
 app.use('/api', api);
 app.use('/api', (req, res) => res.status(404).json({ error: 'غير موجود' }));
 
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h', index: 'index.html' }));
+// the tablet keeps the page open for days: always revalidate code, cache the drawings for a day
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: 'index.html',
+  setHeaders(res, file) {
+    res.set('Cache-Control', /\.(svg|png)$/.test(file) ? 'public, max-age=86400' : 'no-cache');
+  },
+}));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
@@ -397,6 +434,9 @@ app.use((err, req, res, next) => {
 
 if (require.main === module) {
   app.listen(PORT, () => console.log(`${SALON_NAME} يعمل على http://localhost:${PORT}`));
+  const backup = () => makeBackup().catch((err) => console.error('backup failed:', err));
+  backup();
+  setInterval(backup, 6 * 3600e3).unref();
 }
 
 module.exports = app;

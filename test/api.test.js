@@ -120,6 +120,21 @@ test('notes: create, pin, complete, delete', async () => {
   assert.equal((await call('GET', '/api/notes')).body.length, 0);
 });
 
+test('backup download is a SQLite file and requires login', async () => {
+  assert.equal((await call('GET', '/api/backup', null, { auth: false })).status, 401);
+  const res = await fetch(`${base}/api/backup`, { headers: { Cookie: cookie } });
+  assert.equal(res.status, 200);
+  const head = Buffer.from(await res.arrayBuffer()).subarray(0, 15).toString();
+  assert.equal(head, 'SQLite format 3');
+});
+
+test('healthz is public and config exposes slot settings', async () => {
+  assert.equal((await call('GET', '/healthz', null, { auth: false })).body.ok, true);
+  const cfg = await call('GET', '/api/config', null, { auth: false });
+  assert.equal(cfg.body.openHour, 9);
+  assert.equal(cfg.body.slotMinutes, 30);
+});
+
 test('login lockout after repeated failures', async () => {
   // earlier failures from this IP count too; a few more must trigger 429
   let last;

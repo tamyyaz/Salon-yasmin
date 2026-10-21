@@ -3,6 +3,11 @@
 // Slow "rain" of drawn flowers, petals, hearts, sparkles and butterflies behind the whole app.
 (() => {
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const store = {
+    get: () => { try { return localStorage.getItem('fx'); } catch { return null; } },
+    set: (v) => { try { localStorage.setItem('fx', v); } catch { /* private mode */ } },
+  };
+  let enabled = store.get() !== 'off';
   const canvas = document.createElement('canvas');
   canvas.id = 'fx';
   canvas.setAttribute('aria-hidden', 'true');
@@ -25,7 +30,7 @@
   const rand = (a, b) => a + Math.random() * (b - a);
 
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5);   // tablets are high-DPI; the flowers are soft anyway
     W = innerWidth; H = innerHeight;
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -68,10 +73,26 @@
     ctx.restore();
   }
 
-  let last = 0, running = false, t = 0;
+  // On a slow tablet, drop half the flowers (then all of them) rather than lag the UI.
+  let last = 0, running = false, t = 0, sampleSum = 0, sampleN = 0, tier = 0;
+  function watchPerformance(rawDt) {
+    if (tier >= 2 || rawDt > 0.25) return;       // ignore tab-switch gaps
+    sampleSum += rawDt; sampleN += 1;
+    if (sampleN < 90) return;
+    const avg = sampleSum / sampleN;
+    sampleSum = 0; sampleN = 0;
+    if (avg > 0.034) {
+      tier += 1;
+      if (tier === 1) parts.length = Math.ceil(parts.length / 2);
+      else { parts = []; ctx.clearRect(0, 0, W, H); running = false; }
+    }
+  }
+
   function frame(now) {
-    const dt = Math.min((now - last) / 1000 || 0, 0.05);
+    const rawDt = (now - last) / 1000 || 0;
+    const dt = Math.min(rawDt, 0.05);
     last = now; t += dt;
+    if (running) watchPerformance(rawDt);
     ctx.clearRect(0, 0, W, H);
     for (const p of parts) {
       p.y += p.vy * dt;
@@ -81,6 +102,12 @@
       draw(p, t);
     }
     if (running) requestAnimationFrame(frame);
+  }
+
+  function play() {
+    if (running || !enabled || reduceMotion || tier >= 2 || !parts.length) return;
+    running = true;
+    requestAnimationFrame((n) => { last = n; frame(n); });
   }
 
   // flowers drift gently away from the pointer / finger
@@ -97,15 +124,24 @@
     resize();
     const count = Math.round(Math.min(Math.max(W / 55, 12), 30));
     parts = Array.from({ length: count }, () => make(true));
-    if (reduceMotion) { frame(0); return; }     // one static frame, no loop
-    running = true;
-    requestAnimationFrame((n) => { last = n; frame(n); });
+    canvas.hidden = !enabled;
+    if (reduceMotion) { if (enabled) frame(0); return; }   // one static frame, no loop
+    play();
   }
 
   addEventListener('resize', () => { resize(); if (reduceMotion) frame(0); });
   document.addEventListener('visibilitychange', () => {
     if (reduceMotion) return;
-    if (document.hidden) running = false;
-    else if (!running) { running = true; requestAnimationFrame((n) => { last = n; frame(n); }); }
+    if (document.hidden) running = false; else play();
   });
+
+  // lets the app's flower button switch the rain on/off
+  window.salonFx = {
+    get enabled() { return enabled; },
+    setEnabled(on) {
+      enabled = on; store.set(on ? 'on' : 'off');
+      canvas.hidden = !on;
+      if (!on) { running = false; ctx.clearRect(0, 0, W, H); } else if (reduceMotion) frame(0); else play();
+    },
+  };
 })();
