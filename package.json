@@ -1,0 +1,27 @@
+{
+  "name": "salon-yasmin",
+  "version": "1.0.0",
+  "description": "نظام حجز مواعيد صالون ياسمين",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tamyyaz/Salon-yasmin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tamyyaz/Salon-yasmin/issues"
+  },
+  "homepage": "https://github.com/tamyyaz/Salon-yasmin#readme",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

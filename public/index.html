@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#d98fa8">
+  <title>صالون ياسمين</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<section id="login" class="login hidden">
+  <div class="login-bg"></div>
+  <form id="loginForm" class="glass login-card" autocomplete="off">
+    <div class="medallion"><img src="/img/peony.jpg" alt=""></div>
+    <h1 class="brand brand-name">صالون ياسمين</h1>
+    <p class="muted">منطقة خاصة بالصالون فقط</p>
+    <label class="field">
+      <span>كلمة السر</span>
+      <input type="password" id="password" required autofocus autocomplete="current-password">
+    </label>
+    <p id="loginError" class="error" role="alert"></p>
+    <button class="btn btn-primary btn-block" type="submit">دخول</button>
+  </form>
+</section>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="logo" href="#/today">
+        <span class="logo-flower"><img src="/img/bloom.jpg" alt=""></span>
+        <span class="brand brand-name">صالون ياسمين</span>
+      </a>
+      <nav class="nav" id="nav">
+        <a href="#/today" data-route="today">اليوم</a>
+        <a href="#/appointments" data-route="appointments">المواعيد</a>
+        <a href="#/clients" data-route="clients">الزبائن</a>
+        <a href="#/notes" data-route="notes">الملاحظات</a>
+      </nav>
+      <div class="top-actions">
+        <button class="btn btn-sm" data-walkin type="button">زبون مفاجئ</button>
+        <button class="btn btn-primary btn-sm" data-new type="button">＋ حجز جديد</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="logout" type="button">خروج</button>
+    </div>
+  </header>
+
+  <main id="view" class="container"></main>
+
+  <div class="bottom-bar">
+    <button class="btn" data-walkin type="button">زبون مفاجئ</button>
+    <button class="btn btn-primary" data-new type="button">＋ حجز جديد</button>
+  </div>
+</div>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card glass" id="modalCard"></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
