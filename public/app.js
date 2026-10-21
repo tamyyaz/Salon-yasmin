@@ -96,12 +96,19 @@ const reload = () => route();
 
 // ---------- shared pieces ----------
 function emptyState(text) {
-  return `<div class="card empty"><div class="medallion"><img src="/img/blossom.jpg" alt=""></div><p>${esc(text)}</p></div>`;
+  return `<div class="card empty"><div class="medallion"><img class="wiggle" src="/art/bouquet.svg" alt=""></div><p>${esc(text)}</p></div>`;
 }
 
-function hero({ title, sub, img, actions = '' }) {
-  return `<section class="hero" style="--hero-img:url('/img/${img}.jpg')">
-    <div><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
+function hero({ title, sub, tone = 'a', actions = '' }) {
+  return `<section class="hero hero-${tone}">
+    <img class="hd hd-rose" src="/art/rose.svg" alt="">
+    <img class="hd hd-blossom" src="/art/blossom.svg" alt="">
+    <img class="hd hd-daisy" src="/art/daisy.svg" alt="">
+    <img class="hd hd-heart" src="/art/heart.svg" alt="">
+    <img class="hd hd-spark s1" src="/art/sparkle.svg" alt="">
+    <img class="hd hd-spark s2" src="/art/sparkle.svg" alt="">
+    <img class="hd hd-fly" src="/art/butterfly.svg" alt="">
+    <div class="hero-text"><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
     <div class="hero-actions">${actions}</div>
   </section>`;
 }
@@ -167,7 +174,7 @@ async function renderToday() {
     ${hero({
       title: isToday ? 'اليوم' : fmtDate(date),
       sub: isToday ? fmtDate(date) : 'مواعيد اليوم المحدد',
-      img: 'peony',
+      tone: 'a',
       actions: `<button class="btn icon-btn" data-nav="-1" title="اليوم السابق">›</button>
                 <input type="date" id="dayPicker" value="${date}">
                 <button class="btn icon-btn" data-nav="1" title="اليوم التالي">‹</button>
@@ -208,7 +215,7 @@ async function renderAppointments() {
   }
 
   view.innerHTML = `
-    ${hero({ title: 'المواعيد', sub: 'كل الحجوزات في مكان واحد', img: 'rose' })}
+    ${hero({ title: 'المواعيد', sub: 'كل الحجوزات في مكان واحد', tone: 'b' })}
     <div class="filters">
       <div class="tabs">
         ${[['upcoming', 'القادمة'], ['past', 'السابقة'], ['all', 'الكل']]
@@ -238,7 +245,7 @@ async function renderClients() {
   const list = await api(`/clients${clientQuery ? `?q=${encodeURIComponent(clientQuery)}` : ''}`);
   const totalDue = list.reduce((s, c) => s + c.remaining, 0);
   view.innerHTML = `
-    ${hero({ title: 'الزبائن', sub: `إجمالي المتبقي على الزبائن: ${money(totalDue)}`, img: 'carnation' })}
+    ${hero({ title: 'الزبائن', sub: `إجمالي المتبقي على الزبائن: ${money(totalDue)}`, tone: 'c' })}
     <div class="filters"><input type="search" id="q" placeholder="ابحث باسم الزبون أو رقمه…" value="${esc(clientQuery)}"></div>
     <div class="list">
       ${list.length ? list.map((c, i) => `
@@ -266,7 +273,7 @@ async function renderClients() {
 async function renderNotes() {
   const notes = await api('/notes');
   view.innerHTML = `
-    ${hero({ title: 'الملاحظات', sub: 'تذكيرات وأفكار الصالون', img: 'bloom' })}
+    ${hero({ title: 'الملاحظات', sub: 'تذكيرات وأفكار الصالون', tone: 'd' })}
     <form class="note-form" id="noteForm">
       <textarea id="noteText" maxlength="2000" placeholder="اكتب ملاحظة جديدة…" required></textarea>
       <button class="btn btn-primary" type="submit">إضافة</button>
