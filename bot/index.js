@@ -34,12 +34,12 @@ const booking = createBooking({ db, config, getServices: async () => (await know
 const agent = createAgent({ db, gemini, config, booking, knowledge, log });
 const statusRef = db.collection('bot_status').doc('main');
 const startedAt = new Date().toISOString();
-let status = { state: 'connecting' };
+let status = { state: 'connecting', gemini: null };
 
 // the app shows this: green when fresh and connected, so the owner knows if the bot silently dropped
 const publish = (patch = {}) => {
   status = { ...status, ...patch };
-  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini.model };
+  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini.model, gemini: status.gemini ?? null };
   return statusRef.set(doc).catch((e) => log('status-write-failed', e.message));
 };
 
@@ -83,4 +83,16 @@ process.on('SIGTERM', shutdown);
 
 log(`${config.name} — المساعد يبدأ (${gemini.model})`);
 await publish();
+
+// tell the owner right away if the Gemini key or models don't work (shown here and in the app)
+gemini.check().then((results) => {
+  for (const r of results) log(r.ok ? `Gemini ✅ ${r.model}` : `Gemini ⚠️ ${r.model}: ${r.status || 'no connection'} ${r.message}`);
+  const good = results.find((r) => r.ok);
+  const invalidKey = results.every((r) => r.status === 400 || r.status === 401 || r.status === 403);
+  publish({ gemini: {
+    ok: !!good,
+    text: good ? `يعمل (${good.model})${results.some((r) => !r.ok) ? ' — موديل آخر مشغول، رح يبدّل لحاله' : ''}`
+      : invalidKey ? 'المفتاح مرفوض — تأكدي من GEMINI_API_KEY بملف .env' : 'تعذّر الاتصال بـ Gemini (ضغط أو إنترنت)',
+  } });
+}).catch((e) => log('Gemini check failed', e.message));
 await wa.start();

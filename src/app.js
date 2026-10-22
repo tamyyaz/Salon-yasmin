@@ -766,6 +766,7 @@ $('#botBtn').addEventListener('click', () => {
     ${s.number ? `<p class="muted">الرقم: <span dir="ltr">+${esc(s.number)}</span></p>` : ''}
     ${s.qr ? `<p>على موبايل الصالون: واتساب ← الأجهزة المرتبطة ← <b>ربط جهاز</b> ← امسحي هالرمز:</p><div class="qr-box">${qrSvg(s.qr)}</div>` : ''}
     ${s.pairingCode ? `<p>على الموبايل: واتساب ← الأجهزة المرتبطة ← ربط جهاز ← <b>الربط برقم الهاتف</b> وأدخلي:</p><div class="pair-code">${esc(s.pairingCode)}</div>` : ''}
+    ${s.gemini ? `<p>الذكاء الاصطناعي: <b>${s.gemini.ok ? '✅' : '⚠️'} ${esc(s.gemini.text)}</b></p>` : ''}
     <p class="muted">آخر إشارة: ${esc(fmtStamp(s.updatedAt))}</p>
     <div class="modal-actions"><button class="btn" type="button" data-close>إغلاق</button></div>`,
     (card) => card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal)));

@@ -112,8 +112,8 @@ test('duplicates, groups, voice notes and the owner stepping in', async () => {
   assert.match(await agent.handle({ chatId: RANA, text: '   ', messageId: 'v1' }), /تكتبيلي/);            // voice note / empty
   assert.equal(await agent.handle({ chatId: LAYLA, text: '', fromMe: true, messageId: 'o1' }), null);      // owner typed from the phone
   assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'm2' }), null);              // bot stays quiet
-  clock = new Date(clock.getTime() + 7 * 3600e3);
-  assert.equal(await agent.handle({ chatId: LAYLA, text: 'رجعت', messageId: 'm3' }), 'مرحبا تاني');       // 7 h later it resumes
+  clock = new Date(clock.getTime() + 11 * 60e3);
+  assert.equal(await agent.handle({ chatId: LAYLA, text: 'رجعت', messageId: 'm3' }), 'مرحبا تاني');       // 11 minutes later it resumes
 });
 
 test('resume tool lifts the pause so the assistant answers again; the log says why it was quiet', async () => {

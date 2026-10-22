@@ -25,7 +25,7 @@ test('a brief 503 is retried on the same model', async () => {
 });
 
 test('a lasting overload falls back to the lighter model', async () => {
-  const { g, calls } = make([fail(503), fail(503), fail(503), ok('من الاحتياطي')]);
+  const { g, calls } = make([fail(503), fail(503), ok('من الاحتياطي')]);
   assert.equal((await g.generate(args)).parts[0].text, 'من الاحتياطي');
   assert.equal(calls.at(-1).model, 'gemini-flash-lite-latest');
 });
@@ -36,9 +36,9 @@ test('rate limits (429) are treated like overload', async () => {
 });
 
 test('everything down: throws the last error; a bad request is not retried', async () => {
-  const down = make(Array.from({ length: 6 }, () => fail(503)));
+  const down = make(Array.from({ length: 4 }, () => fail(503)));
   await assert.rejects(down.g.generate(args), /Gemini 503 \(gemini-flash-lite-latest\)/);
-  assert.equal(down.calls.length, 6);
+  assert.equal(down.calls.length, 4);
   const bad = make([fail(400), ok('never')]);
   await assert.rejects(bad.g.generate(args), /Gemini 400/);
   assert.equal(bad.calls.length, 1);
@@ -50,4 +50,24 @@ test('empty answers and a missing key are errors', async () => {
   const { g, calls } = make([ok('x')], { fallbackModels: [] });
   await g.generate(args);
   assert.equal(calls.length, 1);
+});
+
+test('a model that just failed is skipped for a few minutes (no waiting on it for every message)', async () => {
+  let clock = 1000;
+  const { g, calls } = make([fail(503), fail(503), ok('lite 1'), ok('lite 2')], { now: () => clock, coolDownMs: 60000 });
+  await g.generate(args);
+  await g.generate(args);
+  assert.deepEqual(calls.map((c) => c.model), ['gemini-flash-latest', 'gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-flash-lite-latest']);
+  clock += 61000;
+  const again = make([ok('main is back')], { now: () => clock });
+  assert.equal((await again.g.generate(args)).parts[0].text, 'main is back');
+});
+
+test('check(): reports each model, including a rejected key, without throwing', async () => {
+  const bad = make([{ ok: false, status: 400, text: async () => '{"error":{"message":"API key not valid"}}' }, { ok: false, status: 400, text: async () => '{"error":{"message":"API key not valid"}}' }]);
+  const r = await bad.g.check();
+  assert.deepEqual(r.map((x) => [x.model, x.ok, x.status]), [['gemini-flash-latest', false, 400], ['gemini-flash-lite-latest', false, 400]]);
+  assert.match(r[0].message, /API key not valid/);
+  const mixed = make([fail(503), ok('x')]);
+  assert.deepEqual((await mixed.g.check()).map((x) => x.ok), [false, true]);
 });

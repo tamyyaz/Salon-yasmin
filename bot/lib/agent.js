@@ -10,8 +10,8 @@ const MAX_TOOL_ROUNDS = 6;
 const MAX_TEXT = 800;
 const HOURLY_LIMIT = 25;          // messages one customer may send per hour
 const DAILY_AI_LIMIT = 800;       // total model calls per day (protects the free quota)
-const HUMAN_HOURS = 12;           // silence after a hand-off
-const OWNER_REPLY_HOURS = Number(process.env.OWNER_PAUSE_HOURS ?? 6);   // silence after the owner types in the chat herself (0 = never pause)
+const HANDOFF_MINUTES = Number(process.env.HANDOFF_PAUSE_MINUTES ?? 30);   // silence after a hand-off to the salon
+const OWNER_REPLY_MINUTES = Number(process.env.OWNER_PAUSE_MINUTES ?? 10);  // silence after the owner types in the chat herself (0 = never pause)
 
 export const TOOLS = [
   { name: 'check_availability', description: 'الأوقات الفاضية ليوم معيّن. استعملها دائماً قبل ما تقترح وقت.',
@@ -66,9 +66,9 @@ export function createAgent({ db, gemini, config, booking, knowledge = createKno
       catch (e) { if (isAlreadyExists(e)) { log('skipped: duplicate delivery', messageId); return null; } throw e; }
     }
     if (fromMe) {                                                        // the owner is chatting herself: step back
-      if (OWNER_REPLY_HOURS > 0) {
-        await chatRef.set({ humanUntil: t.getTime() + OWNER_REPLY_HOURS * 3600e3 }, { merge: true });
-        log(`you typed in this chat → assistant stays quiet with ${phone} for ${OWNER_REPLY_HOURS} h (run: npm run resume)`);
+      if (OWNER_REPLY_MINUTES > 0) {
+        await chatRef.set({ humanUntil: t.getTime() + OWNER_REPLY_MINUTES * 60e3 }, { merge: true });
+        log(`you typed in this chat → assistant stays quiet with ${phone} for ${OWNER_REPLY_MINUTES} min (run: npm run resume)`);
       }
       return null;
     }
@@ -105,7 +105,7 @@ export function createAgent({ db, gemini, config, booking, knowledge = createKno
       cancel_booking: (a) => booking.cancel({ ...a, phone }),
       handoff_to_human: async (a) => {
         await booking.handoff({ phone, reason: a.reason });
-        await chatRef.set({ humanUntil: t.getTime() + HUMAN_HOURS * 3600e3 }, { merge: true });
+        await chatRef.set({ humanUntil: t.getTime() + HANDOFF_MINUTES * 60e3 }, { merge: true });
         return { ok: true };
       },
     };
