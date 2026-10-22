@@ -22,13 +22,13 @@ const stamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
 const log = (...a) => console.log(stamp(), ...a);
 const fail = (msg) => { console.error(`\n✖ ${msg}\n`); process.exit(1); };
 
-if (!process.env.GEMINI_API_KEY) fail('ضع GEMINI_API_KEY في bot/.env (من https://aistudio.google.com/apikey)');
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.FIREBASE_SERVICE_ACCOUNT) {
   fail('ضع GOOGLE_APPLICATION_CREDENTIALS (مسار ملف مفتاح حساب الخدمة) في bot/.env');
 }
 
 const db = openDb({ projectId: web.firebase.projectId });
-const gemini = createGemini({ apiKey: process.env.GEMINI_API_KEY });
+// The AI model is optional: without a key (or with AI_PROVIDER=none) the menu assistant answers on its own.
+const gemini = process.env.AI_PROVIDER !== 'none' && process.env.GEMINI_API_KEY ? createGemini({ apiKey: process.env.GEMINI_API_KEY }) : null;
 const knowledge = createKnowledge({ db, config });
 const booking = createBooking({ db, config, getServices: async () => (await knowledge.load()).services });
 const agent = createAgent({ db, gemini, config, booking, knowledge, log });
@@ -39,7 +39,7 @@ let status = { state: 'connecting', gemini: null };
 // the app shows this: green when fresh and connected, so the owner knows if the bot silently dropped
 const publish = (patch = {}) => {
   status = { ...status, ...patch };
-  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini.model, gemini: status.gemini ?? null };
+  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini?.model ?? 'menu', gemini: status.gemini ?? null };
   return statusRef.set(doc).catch((e) => log('status-write-failed', e.message));
 };
 
@@ -81,18 +81,22 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-log(`${config.name} — المساعد يبدأ (${gemini.model})`);
+log(`${config.name} — المساعد يبدأ (${gemini ? gemini.model : 'بنمط القوائم، بدون ذكاء اصطناعي'})`);
 await publish();
 
-// tell the owner right away if the Gemini key or models don't work (shown here and in the app)
-gemini.check().then((results) => {
-  for (const r of results) log(r.ok ? `Gemini ✅ ${r.model}` : `Gemini ⚠️ ${r.model}: ${r.status || 'no connection'} ${r.message}`);
-  const good = results.find((r) => r.ok);
-  const invalidKey = results.every((r) => r.status === 400 || r.status === 401 || r.status === 403);
-  publish({ gemini: {
-    ok: !!good,
-    text: good ? `يعمل (${good.model})${results.some((r) => !r.ok) ? ' — موديل آخر مشغول، رح يبدّل لحاله' : ''}`
-      : invalidKey ? 'المفتاح مرفوض — تأكدي من GEMINI_API_KEY بملف .env' : 'تعذّر الاتصال بـ Gemini (ضغط أو إنترنت)',
-  } });
-}).catch((e) => log('Gemini check failed', e.message));
-await wa.start();
+// tell the owner right away how the assistant is answering (shown here and in the app)
+const MENU_ONLY = 'يعمل بنمط القوائم (أسعار، عنوان، دوام، أسئلة شائعة، حجز خطوة خطوة) بدون ذكاء اصطناعي';
+if (!gemini) {
+  log('الوضع: القوائم (بدون ذكاء اصطناعي)');
+  publish({ gemini: { ok: true, text: MENU_ONLY } });
+} else {
+  gemini.check().then((results) => {
+    for (const r of results) log(r.ok ? `Gemini ✅ ${r.model}` : `Gemini ⚠️ ${r.model}: ${r.status || 'no connection'} ${r.message}`);
+    const good = results.find((r) => r.ok);
+    const blocked = results.some((r) => /location is not supported/i.test(r.message));
+    if (!good) agent.setAiDown(30 * 60e3);                          // don't try the model on every message while it is unreachable
+    publish({ gemini: good
+      ? { ok: true, text: `الذكاء الاصطناعي يعمل (${good.model})${results.some((r) => !r.ok) ? ' — موديل آخر مشغول، رح يبدّل لحاله' : ''}` }
+      : { ok: false, text: `${blocked ? 'Gemini غير متاح من بلدك' : 'تعذّر الاتصال بـ Gemini'} — ${MENU_ONLY}` } });
+  }).catch((e) => log('Gemini check failed', e.message));
+}

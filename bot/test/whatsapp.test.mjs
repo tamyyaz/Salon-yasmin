@@ -87,7 +87,7 @@ test('sending: typing indicator, human-like pause, own echo ignored, owner typin
   const sent = await wa.send('962791234567@c.us', 'أهلين 🌸');
   assert.deepEqual(sock.sent, [['962791234567@s.whatsapp.net', 'أهلين 🌸']]);
   assert.deepEqual(sock.presence.map((p) => p[0]), ['composing', 'paused']);
-  assert.ok(sleeps.some((ms) => ms >= 700 && ms <= 6500));            // typing pause scales with length, capped
+  assert.ok(sleeps.some((ms) => ms >= 350 && ms <= 3000));           // typing pause scales with length, capped
   upsert(sock, [recent({ key: { remoteJid: '962791234567@s.whatsapp.net', id: sent.key.id, fromMe: true }, message: { conversation: 'أهلين 🌸' } })]);
   await flush();
   assert.equal(got.length, 0);                                         // our own message coming back is not "the owner typing"
@@ -111,7 +111,7 @@ test('there is always a pause between consecutive messages', async () => {
   const { wa, sleeps } = await harness();
   await wa.send('962791234567@c.us', 'one');
   await wa.send('962791234567@c.us', 'two');
-  assert.ok(sleeps.filter((ms) => ms > 2000).length >= 1);            // the 2.5 s gap kicked in for the second message
+  assert.ok(sleeps.some((ms) => ms > 800));                          // the gap between messages kicked in for the second one
 });
 
 test('connection lifecycle: QR, pairing code, reconnect with back-off, logged-out stops', async () => {

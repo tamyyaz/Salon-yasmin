@@ -98,7 +98,7 @@ export function createWhatsApp({
           if (!m.fromMe) jidByChat.set(m.chatId, m.jid);
           if (m.fromMe && type === 'append') return;                  // history sync of old own messages
           return enqueue(m.chatId, async () => {
-            if (!m.fromMe) await sock.readMessages([m.key]).catch(() => {});
+            if (!m.fromMe) sock.readMessages([m.key]).catch(() => {});      // don't wait for the receipt
             await onMessage(m);
           });
         }).catch((e) => log('parse-failed', e));
@@ -110,10 +110,10 @@ export function createWhatsApp({
   async function send(chatId, text) {
     if (!sock) throw new Error('WhatsApp is not connected');
     const jid = jidByChat.get(chatId) || pnJidOf(chatId);
-    const gap = lastSendAt + 2500 - Date.now();
+    const gap = lastSendAt + 1200 - Date.now();
     if (gap > 0) await sleep(gap);
     await sock.sendPresenceUpdate('composing', jid).catch(() => {});
-    await sleep(Math.min(6000, 700 + text.length * 35) + random() * 500);
+    await sleep(Math.min(2500, 350 + text.length * 10) + random() * 300);
     const sent = await sock.sendMessage(jid, { text });
     if (sent?.key?.id) sentIds.add(sent.key.id);
     await sock.sendPresenceUpdate('paused', jid).catch(() => {});

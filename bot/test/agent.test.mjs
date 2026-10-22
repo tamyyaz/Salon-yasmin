@@ -33,7 +33,7 @@ function fakeGemini(script) {
     },
   };
 }
-const agentWith = (script) => { const gemini = fakeGemini(script); return { gemini, agent: createAgent({ db, gemini, config, booking, now }) }; };
+const agentWith = (script) => { const gemini = fakeGemini(script); return { gemini, agent: createAgent({ db, gemini, config, booking, now, aiFirst: true }) }; };   // these tests are about the AI path
 const lastResult = (gemini) => gemini.seen.at(-1).at(-1).parts[0].functionResponse.response;
 
 test.beforeEach(async () => {
@@ -119,7 +119,7 @@ test('duplicates, groups, voice notes and the owner stepping in', async () => {
 test('resume tool lifts the pause so the assistant answers again; the log says why it was quiet', async () => {
   const logs = [];
   const gemini = fakeGemini([say('أهلين'), say('رجعت أرد')]);
-  const agent = createAgent({ db, gemini, config, booking, now: () => new Date(), log: (...a) => logs.push(a.join(' ')) });
+  const agent = createAgent({ db, gemini, config, booking, now: () => new Date(), aiFirst: true, log: (...a) => logs.push(a.join(' ')) });
   await agent.handle({ chatId: LAYLA, text: '', fromMe: true, messageId: 'own1' });                      // owner typed in the chat
   assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'c1' }), null);
   assert.ok(logs.some((l) => /paused for \+?962791234567|paused for 962791234567/.test(l) && /npm run resume/.test(l)), 'the log explains the silence');
@@ -152,12 +152,12 @@ test('rate limit: one notice, then silence', async () => {
   assert.deepEqual([replies, notice, silent], [25, 1, 2]);
 });
 
-test('a model failure never leaks details: friendly text + note for the salon', async () => {
+test('a model failure never leaks details: the menu assistant answers instead', async () => {
   const { agent } = agentWith([new Error('Gemini 500: internal secret details')]);
   const reply = await agent.handle({ chatId: LAYLA, text: 'بدي موعد', messageId: 'f1' });
   assert.ok(!/secret|Gemini/.test(reply));
-  assert.match(reply, /الصالون/);
-  assert.equal((await db.collection('notes').get()).size, 1);
+  assert.match(reply, /أي خدمة بدك/);                                       // booking flow started by the fallback
+  assert.equal((await db.collection('notes').get()).size, 0);              // nothing for the owner to worry about
 });
 
 test('answers come from what the owner wrote in the app: prices, info, FAQ — and stay current', async () => {

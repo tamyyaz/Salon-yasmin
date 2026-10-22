@@ -7,8 +7,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const base = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export function createGemini({
-  apiKey, model = process.env.GEMINI_MODEL || 'gemini-flash-latest',
-  fallbackModels = (process.env.GEMINI_FALLBACK_MODEL ?? 'gemini-flash-lite-latest').split(',').map((m) => m.trim()).filter(Boolean),
+  apiKey, model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
+  fallbackModels = (process.env.GEMINI_FALLBACK_MODEL ?? 'gemini-flash-latest').split(',').map((m) => m.trim()).filter(Boolean),
   fetchImpl = fetch, retryDelayMs = 1500, retriesPerModel = 1, coolDownMs = 3 * 60e3, now = Date.now,
 }) {
   if (!apiKey) throw new Error('GEMINI_API_KEY is missing');
@@ -22,7 +22,7 @@ export function createGemini({
       contents,
       tools: [{ functionDeclarations: tools }],
       toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-      generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
+      generationConfig: { temperature: 0.3, maxOutputTokens: 500 },
     });
     let lastError;
     const chain = [model, ...fallbackModels.filter((m) => m !== model)];

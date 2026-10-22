@@ -13,5 +13,7 @@ export function openDb({ projectId, appName = 'salon-bot' } = {}) {
     options.credential = process.env.FIREBASE_SERVICE_ACCOUNT ? cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) : applicationDefault();
   }
   const app = initializeApp(options, appName);
-  return getFirestore(app);
+  const db = getFirestore(app);
+  db.settings({ ignoreUndefinedProperties: true });
+  return db;
 }
