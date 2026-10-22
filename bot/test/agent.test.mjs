@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../lib/db.js';
 import { createBooking, phoneOfChat } from '../lib/booking.js';
-import { createAgent } from '../lib/agent.js';
+import { createAgent as makeAgent } from '../lib/agent.js';
 import { watchConfirmations, messageFor } from '../lib/notify.js';
 import baseConfig from '../salon.config.js';
 
@@ -33,10 +33,13 @@ function fakeGemini(script) {
     },
   };
 }
+const agents = [];                                     // background saves of finished tests must land before the database is wiped
+const createAgent = (o) => { const a = makeAgent(o); agents.push(a); return a; };
 const agentWith = (script) => { const gemini = fakeGemini(script); return { gemini, agent: createAgent({ db, gemini, config, booking, now, aiFirst: true }) }; };   // these tests are about the AI path
 const lastResult = (gemini) => gemini.seen.at(-1).at(-1).parts[0].functionResponse.response;
 
 test.beforeEach(async () => {
+  await Promise.all(agents.splice(0).map((a) => a.flush()));
   clock = new Date('2026-10-22T10:00:00Z');
   await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
 });
@@ -122,10 +125,12 @@ test('resume tool lifts the pause so the assistant answers again; the log says w
   const agent = createAgent({ db, gemini, config, booking, now: () => new Date(), aiFirst: true, log: (...a) => logs.push(a.join(' ')) });
   await agent.handle({ chatId: LAYLA, text: '', fromMe: true, messageId: 'own1' });                      // owner typed in the chat
   assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'c1' }), null);
+  await agent.flush();
   assert.ok(logs.some((l) => /paused for \+?962791234567|paused for 962791234567/.test(l) && /npm run resume/.test(l)), 'the log explains the silence');
   const { spawnSync } = await import('node:child_process');
   const run = spawnSync(process.execPath, ['tools/resume.mjs', '962791234567'], { env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT }, encoding: 'utf8' });
   assert.match(run.stdout, /resumed: 962791234567/);
+  agent.invalidate();                                                                                     // (the running bot re-reads paused chats every 15 s)
   assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'c2' }), 'أهلين');
   const again = spawnSync(process.execPath, ['tools/resume.mjs'], { env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT }, encoding: 'utf8' });
   assert.match(again.stdout, /Nothing was paused/);

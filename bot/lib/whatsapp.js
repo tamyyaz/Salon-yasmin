@@ -2,7 +2,7 @@
 // "linked device" (like WhatsApp Web) and this process reads/answers messages directly.
 //
 // Behaviour kept deliberately human-like and low-volume: it only replies to people who wrote first,
-// shows "typing…" in proportion to the reply length, and never sends faster than one message per 2.5 s.
+// shows "typing…" in proportion to the reply length, and never sends faster than one message per 0.6 s.
 const sleepDefault = (ms) => new Promise((r) => setTimeout(r, ms));
 const MEDIA = ['audioMessage', 'imageMessage', 'videoMessage', 'documentMessage'];
 
@@ -110,10 +110,10 @@ export function createWhatsApp({
   async function send(chatId, text) {
     if (!sock) throw new Error('WhatsApp is not connected');
     const jid = jidByChat.get(chatId) || pnJidOf(chatId);
-    const gap = lastSendAt + 1200 - Date.now();
+    const gap = lastSendAt + 600 - Date.now();
     if (gap > 0) await sleep(gap);
     await sock.sendPresenceUpdate('composing', jid).catch(() => {});
-    await sleep(Math.min(2500, 350 + text.length * 10) + random() * 300);
+    await sleep(Math.min(1400, 250 + text.length * 6) + random() * 200);
     const sent = await sock.sendMessage(jid, { text });
     if (sent?.key?.id) sentIds.add(sent.key.id);
     await sock.sendPresenceUpdate('paused', jid).catch(() => {});

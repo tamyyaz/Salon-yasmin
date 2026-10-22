@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../lib/db.js';
 import { createBooking, phoneOfChat } from '../lib/booking.js';
-import { createAgent } from '../lib/agent.js';
+import { createAgent as makeAgent } from '../lib/agent.js';
 import { createMenu } from '../lib/menu.js';
 import { createKnowledge } from '../lib/knowledge.js';
 import { norm, keywords } from '../lib/arabic.js';
@@ -20,6 +20,8 @@ const booking = createBooking({ db, config, now, getServices: async () => (await
 const pure = createMenu({ booking: { allSlots: booking.allSlots }, config });
 
 const sayTo = (agent, chatId = LAYLA) => { let n = 0; return (text) => agent.handle({ chatId, text, messageId: `m${Date.now()}-${n++}-${Math.random()}` }); };
+const agents = [];                                     // background saves of finished tests must land before the database is wiped
+const createAgent = (o) => { const a = makeAgent(o); agents.push(a); return a; };
 const newAgent = (extra = {}) => createAgent({ db, config, booking, knowledge, now, ...extra });
 const seed = async () => {
   await db.collection('services').add({ name: 'صبغة', price: 80, note: 'يزيد للشعر الطويل', active: true });
@@ -30,6 +32,7 @@ const seed = async () => {
 };
 
 test.beforeEach(async () => {
+  await Promise.all(agents.splice(0).map((a) => a.flush()));
   clock = new Date('2026-10-22T10:00:00Z');
   await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
   await seed();
@@ -166,14 +169,17 @@ test('my bookings and cancelling one', async () => {
 });
 
 test('unknown messages: one hint, then the salon is told; "talk to someone" goes straight to the salon', async () => {
-  const say = sayTo(newAgent());
+  const agent = newAgent();
+  const say = sayTo(agent);
   assert.match(await say('كيف الطقس بالصين'), /ما فهمت قصدك/);
   assert.match(await say('شي غريب تاني'), /بلّغت الصالون/);
   const notes = (await db.collection('notes').get()).docs.map((d) => d.data());
   assert.equal(notes.length, 1);
   assert.match(notes[0].text, /شي غريب تاني/);
   assert.equal(await say('هل في أحد؟'), null);                                   // now paused for the salon to reply
+  await agent.flush();
   await db.collection('wa_chats').doc('962791234567').update({ humanUntil: 0 });
+  agent.invalidate();
   assert.match(await say('بدي احكي مع موظفة'), /بلّغت الصالون/);
   assert.equal((await db.collection('notes').get()).size, 2);
 });

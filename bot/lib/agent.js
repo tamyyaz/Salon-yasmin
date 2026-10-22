@@ -62,30 +62,66 @@ export function createAgent({
   const chats = db.collection('wa_chats');
   let aiDownUntil = 0;
 
+  // ---- in-memory state: replies must not wait for the network ----
+  // Chat state lives in memory while the bot runs and is saved to Firestore in the background (write-behind).
+  const mem = new Map();          // phone -> chat state
+  const memAt = new Map();        // phone -> when it was last read from Firestore
+  const seen = new Set();         // message ids already handled (WhatsApp can deliver one twice)
+  let writes = Promise.resolve();
+
+  const persist = (ref, patch) => {
+    writes = writes.then(() => ref.set(patch, { merge: true })).catch((e) => log('save-failed', e.message));
+    return writes;
+  };
+  const setChat = (phone, ref, patch) => { mem.set(phone, { ...(mem.get(phone) || {}), ...patch }); return persist(ref, patch); };
+  async function getChat(phone, ref, nowMs) {
+    const cached = mem.get(phone);
+    // a paused chat is re-read now and then so `npm run resume` (done from another terminal) takes effect
+    if (cached && !((cached.humanUntil || 0) > nowMs && nowMs - (memAt.get(phone) || 0) > 15000)) return cached;
+    const data = (await ref.get()).data() || {};
+    mem.set(phone, data); memAt.set(phone, nowMs);
+    return data;
+  }
+  const alreadySeen = (id) => {
+    if (seen.has(id)) return true;
+    seen.add(id);
+    if (seen.size > 5000) seen.delete(seen.values().next().value);
+    db.collection('wa_messages').doc(String(id).replace(/\W/g, '_')).create({ at: new Date().toISOString() }).catch(() => {});
+    return false;
+  };
+
+  /** Loads all chat states and recent message ids once, so even a customer's first message needs no lookup. */
+  async function warm() {
+    const [chatSnap, msgSnap] = await Promise.all([
+      db.collection('wa_chats').limit(5000).get(),
+      db.collection('wa_messages').where('at', '>', new Date(Date.now() - 3600e3).toISOString()).limit(5000).get(),
+    ]);
+    chatSnap.docs.forEach((d) => { mem.set(d.id, d.data()); memAt.set(d.id, Date.now()); });
+    msgSnap.docs.forEach((d) => seen.add(d.id));
+    return { chats: chatSnap.size, messages: msgSnap.size };
+  }
+
   // model calls made today by this process (the cap protects the free quota; no database round trip needed)
   const usage = { day: '', calls: 0 };
 
   async function handle({ chatId, text, messageId, fromMe = false }) {
     if (!String(chatId).endsWith('@c.us')) { log('skipped: not a private chat', chatId); return null; }   // no groups, no status/broadcast
     const phone = phoneOfChat(chatId);
-    const chatRef = chats.doc(phone.slice(1));
+    const key = phone.slice(1);
+    const chatRef = chats.doc(key);
     const t = now();
+    const t0 = Date.now();
 
-    // one round trip for everything we need before answering (duplicate check, chat state, salon data)
-    const dedupe = messageId
-      ? db.collection('wa_messages').doc(String(messageId).replace(/\W/g, '_')).create({ at: t.toISOString() }).then(() => false, (e) => { if (isAlreadyExists(e)) return true; throw e; })
-      : Promise.resolve(false);
+    if (messageId && alreadySeen(messageId)) { log('skipped: duplicate delivery', messageId); return null; }
     if (fromMe) {                                                        // the owner is chatting herself: step back
-      if (await dedupe) return null;
       if (OWNER_REPLY_MINUTES > 0) {
-        await chatRef.set({ humanUntil: t.getTime() + OWNER_REPLY_MINUTES * 60e3 }, { merge: true });
+        setChat(key, chatRef, { humanUntil: t.getTime() + OWNER_REPLY_MINUTES * 60e3 });
         log(`you typed in this chat → assistant stays quiet with ${phone} for ${OWNER_REPLY_MINUTES} min (run: npm run resume)`);
       }
       return null;
     }
-    const [duplicate, chatSnap, kbResult] = await Promise.all([dedupe, chatRef.get(), knowledge.load().catch((e) => e)]);
-    if (duplicate) { log('skipped: duplicate delivery', messageId); return null; }
-    const chat = chatSnap.data() || {};
+    const [chat, kbResult] = await Promise.all([getChat(key, chatRef, t.getTime()), knowledge.load().catch((e) => e)]);
+    const tPrep = Date.now() - t0;
     if ((chat.humanUntil || 0) > t.getTime()) {
       log(`skipped: assistant is paused for ${phone} until ${new Date(chat.humanUntil).toISOString()} (you typed in the chat, or a hand-off) — run: npm run resume`);
       return null;
@@ -96,7 +132,7 @@ export function createAgent({
     const count = (windowFresh ? chat.count || 0 : 0) + 1;
     const rate = { windowStart: windowFresh ? chat.windowStart : t.getTime(), count };
     if (count > HOURLY_LIMIT) {
-      await chatRef.set(rate, { merge: true });
+      setChat(key, chatRef, rate);
       log('rate-limited', phone);
       return count === HOURLY_LIMIT + 1 ? 'وصلتي للحد الأقصى من الرسائل هالساعة، رح نرد عليك قريباً 🌸' : null;
     }
@@ -117,6 +153,7 @@ export function createAgent({
     let misses = chat.misses || 0;
     let handoff = null;
     let menuAnswer = null;
+    let via = 'menu';
 
     const aiReady = () => {
       if (!gemini || t.getTime() < aiDownUntil) return false;
@@ -127,7 +164,7 @@ export function createAgent({
     const askAi = async () => {
       usage.calls += 1;
       db.collection('wa_stats').doc(usage.day).set({ calls: FieldValue.increment(1) }, { merge: true }).catch(() => {});
-      try { return await runModel({ chatRef, phone, t, chat, clean, kb }); }
+      try { return await runModel({ chatRef, key, phone, t, chat, clean, kb }); }
       catch (e) {
         log('model-failed', e.message);
         // a refused key / unsupported country won't fix itself in a minute; a busy model usually does
@@ -147,16 +184,17 @@ export function createAgent({
       }
     };
 
+    const tBrain0 = Date.now();
     if (aiFirst && aiReady()) {
       reply = await askAi();
-      if (reply !== null) { flow = null; misses = 0; }
+      if (reply !== null) { flow = null; misses = 0; via = 'ai'; }
     }
     if (reply === null) {
       // menu first: instant for prices, address, hours, FAQ and the booking steps; the AI only gets what the menu can't place
       menuAnswer = await askMenu();
       if (menuAnswer.unknown && !aiFirst && aiReady()) {
         const smart = await askAi();
-        if (smart !== null) { reply = smart; flow = null; misses = 0; menuAnswer = null; }
+        if (smart !== null) { reply = smart; flow = null; misses = 0; menuAnswer = null; via = 'ai'; }
       }
     }
     if (menuAnswer) {
@@ -165,20 +203,21 @@ export function createAgent({
     }
     if (handoff) {
       await booking.handoff({ phone, reason: handoff });
-      await chatRef.set({ humanUntil: t.getTime() + HANDOFF_MINUTES * 60e3 }, { merge: true });
+      setChat(key, chatRef, { humanUntil: t.getTime() + HANDOFF_MINUTES * 60e3 });
     }
 
     const history = (chat.history || []).slice(-HISTORY_TURNS);
-    await chatRef.set({
+    setChat(key, chatRef, {                                              // saved in the background: the reply doesn't wait for it
       ...rate,
       history: [...history, { role: 'user', text: clean }, { role: 'model', text: reply }].slice(-HISTORY_TURNS),
       flow: flow ?? null, name: savedName ?? null, misses, lastSeen: t.toISOString(),
-    }, { merge: true });
+    });
+    log(`timing: via=${via} prep=${tPrep}ms brain=${Date.now() - tBrain0}ms total=${Date.now() - t0}ms`);
     return reply.slice(0, 1500);
   }
 
   /** The Gemini tool-calling loop. Throws when the model can't be used. */
-  async function runModel({ chatRef, phone, t, chat, clean, kb }) {
+  async function runModel({ chatRef, key, phone, t, chat, clean, kb }) {
     const history = (chat.history || []).slice(-HISTORY_TURNS);
     while (history.length && history[0].role !== 'user') history.shift();
     const contents = [...toContents(history), { role: 'user', parts: [{ text: clean }] }];
@@ -190,7 +229,7 @@ export function createAgent({
       cancel_booking: (a) => booking.cancel({ ...a, phone }),
       handoff_to_human: async (a) => {
         await booking.handoff({ phone, reason: a.reason });
-        await chatRef.set({ humanUntil: t.getTime() + HANDOFF_MINUTES * 60e3 }, { merge: true });
+        setChat(key, chatRef, { humanUntil: t.getTime() + HANDOFF_MINUTES * 60e3 });
         return { ok: true };
       },
     };
@@ -217,5 +256,12 @@ export function createAgent({
     throw new Error('Gemini: too many tool rounds');
   }
 
-  return { handle, setAiDown: (ms) => { aiDownUntil = Date.now() + ms; } };
+  return {
+    handle, warm,
+    setAiDown: (ms) => { aiDownUntil = Date.now() + ms; },
+    /** Waits for background saves (used by tests and on shutdown). */
+    flush: () => writes,
+    /** Forget cached chat state, e.g. after it was changed from outside (`npm run resume`). */
+    invalidate: () => { mem.clear(); memAt.clear(); },
+  };
 }

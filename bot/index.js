@@ -57,8 +57,10 @@ const wa = createWhatsApp({
   onMessage: async (m) => {
     log(m.fromMe ? 'you typed to' : 'message from', m.chatId.slice(0, -5), m.hasMedia ? '(media)' : `(${m.text.length} chars)`);
     if (m.fromMe) { await agent.handle({ chatId: m.chatId, fromMe: true, messageId: m.messageId }); return; }
+    const t0 = Date.now();
     const reply = await agent.handle({ chatId: m.chatId, text: m.text, messageId: m.messageId });
-    if (reply) { await wa.send(m.chatId, reply); log('replied to', m.chatId.slice(0, -5)); }
+    const tBrain = Date.now();
+    if (reply) { await wa.send(m.chatId, reply); log('replied to', m.chatId.slice(0, -5), `(thinking ${tBrain - t0}ms, sending ${Date.now() - tBrain}ms)`); }
   },
 });
 
@@ -75,11 +77,16 @@ const cleaner = setInterval(() => cleanup().catch(() => {}), 864e5);
 
 const shutdown = async () => {
   clearInterval(heartbeat); clearInterval(cleaner); stopWatching(); wa.stop();
+  await agent.flush().catch(() => {});
   await publish({ state: 'offline', pairingCode: null }).catch(() => {});
   process.exit(0);
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// keep prices/FAQ and chat state in memory so a reply never waits on a database round trip
+await knowledge.start().catch((e) => log('knowledge-live-failed', e.message));
+await agent.warm().catch((e) => log('warm-failed', e.message));
 
 log(`${config.name} — المساعد يبدأ (${gemini ? gemini.model : 'بنمط القوائم، بدون ذكاء اصطناعي'})`);
 await publish();
