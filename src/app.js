@@ -1,25 +1,37 @@
-'use strict';
+import { config } from './config.js';
+import { createStore } from './store.js';
+import { ymd, parseYmd, addDays } from './logic.js';
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const view = $('#view');
-const state = { name: 'صالون ياسمين', currency: '₪', date: ymd(new Date()), openHour: 9, closeHour: 21, slotMinutes: 30 };
+const state = {
+  name: config.salonName, currency: config.currency, date: ymd(new Date()),
+  openHour: config.openHour, closeHour: config.closeHour, slotMinutes: config.slotMinutes,
+};
+
+// On localhost the app talks to the Firebase emulators (see README), never to the real project.
+const emulator = ['localhost', '127.0.0.1'].includes(location.hostname)
+  ? { host: location.hostname, authPort: 9099, firestorePort: 8080 } : null;
+const configured = !config.firebase.apiKey.startsWith('REPLACE');
+const store = emulator || configured
+  ? createStore({
+    firebase: configured ? config.firebase : { apiKey: 'demo', authDomain: 'demo-salon.firebaseapp.com', projectId: 'demo-salon', appId: 'demo' },
+    salonEmail: config.salonEmail, emulator,
+  })
+  : null;
+const api = (path, opts) => store.api(path, opts);
 
 const STATUS_LABEL = { booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
 const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, notes: renderNotes };
 
 // ---------- helpers ----------
-function ymd(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
-const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
 const fmtDate = (s, opts) => parseYmd(s).toLocaleDateString('ar-u-nu-latn', opts || { weekday: 'long', day: 'numeric', month: 'long' });
+// ISO timestamps from Firestore
+const fmtStamp = (s) => new Date(s).toLocaleString('ar-u-nu-latn', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const fmtNum = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 const money = (n) => `${fmtNum(n)} ${state.currency}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nowTime = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const fmtStamp = (s) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('ar-u-nu-latn', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const waLink = (phone) => `https://wa.me/${phone.replace(/\D/g, '').replace(/^0+/, '')}`;
 
 let toastTimer;
@@ -34,25 +46,7 @@ function toast(msg) {
 const setOffline = (off) => $('#offline').classList.toggle('hidden', !off);
 addEventListener('offline', () => setOffline(true));
 addEventListener('online', () => { setOffline(false); refresh(); });
-
-async function api(path, { method = 'GET', body } = {}) {
-  let res;
-  try {
-    res = await fetch(`/api${path}`, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    setOffline(true);
-    throw new Error('لا يوجد اتصال بالإنترنت');
-  }
-  setOffline(false);
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/login') { showLogin(); throw new Error(data.error || 'سجّل الدخول'); }
-  if (!res.ok) throw new Error(data.error || 'حدث خطأ');
-  return data;
-}
+if (!navigator.onLine) setOffline(true);
 
 // run an action, show errors as toast
 async function attempt(fn) {
@@ -88,12 +82,16 @@ $('#modal').addEventListener('click', (e) => { if (e.target.hasAttribute('data-c
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#ask').classList.contains('hidden')) $('#askNo').click(); else closeModal(); } });
 
 // ---------- auth ----------
-function showLogin() {
+const splash = $('#splash');
+function showLogin(message = '') {
+  splash.classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
   $('#password').value = '';
+  $('#loginError').textContent = message;
 }
 function showApp() {
+  splash.classList.add('hidden');
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   route();
@@ -101,15 +99,23 @@ function showApp() {
 
 $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const btn = $('#loginForm button');
   $('#loginError').textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الدخول…';
   try {
-    await api('/login', { method: 'POST', body: { password: $('#password').value } });
-    showApp();
+    await store.signIn($('#password').value);   // onAuth() takes it from here
   } catch (err) {
     $('#loginError').textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'دخول';
   }
 });
-$('#logout').addEventListener('click', async () => { await api('/logout', { method: 'POST' }); showLogin(); });
+$('#logout').addEventListener('click', async () => {
+  if (!(await ask('تسجيل الخروج من هذا الجهاز؟', { yes: 'خروج' }))) return;
+  await store.signOutAndWipe();   // also clears the offline copy of the data on this device
+  location.reload();
+});
 
 // ---------- routing ----------
 async function route({ silent = false } = {}) {
@@ -180,7 +186,7 @@ view.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-act]');
   const card = e.target.closest('[data-id]');
   if (!btn || !card || !card.classList.contains('appt')) return;
-  const id = Number(card.dataset.id);
+  const id = card.dataset.id;
   if (btn.dataset.act === 'status') {
     const a = await attempt(() => api(`/appointments/${id}`, { method: 'PATCH', body: { status: btn.dataset.status } }));
     if (a) {
@@ -323,7 +329,8 @@ async function renderNotes() {
           </div>
         </article>`).join('') : emptyState('لا توجد ملاحظات')}
     </div>
-    <div class="backup"><a class="btn btn-sm" href="/api/backup" download>⬇ تحميل نسخة احتياطية من كل البيانات</a></div>`;
+    <div class="backup"><button class="btn btn-sm" id="backupBtn" type="button">⬇ تحميل نسخة احتياطية من كل البيانات</button></div>`;
+  $('#backupBtn', view).addEventListener('click', downloadBackup);
 
   $('#noteForm', view).addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -341,6 +348,17 @@ async function renderNotes() {
       reload();
     });
   });
+}
+
+async function downloadBackup() {
+  const data = await attempt(() => store.exportAll());
+  if (!data) return;
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  link.download = `salon-backup-${ymd(new Date())}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+  toast('تم تنزيل النسخة الاحتياطية');
 }
 
 // ---------- modals ----------
@@ -539,7 +557,7 @@ async function openClientHistory(c) {
       <button class="btn" type="button" data-close>إغلاق</button>
     </div>`, (card) => {
     card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
-    card.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => openPayments(Number(b.dataset.pay))));
+    card.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => openPayments(b.dataset.pay)));
     $('#newForClient', card).addEventListener('click', () => openAppointmentForm(null, { client_name: c.name, phone: c.phone }));
   });
 }
@@ -599,17 +617,27 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ac
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
-(async function boot() {
-  try {
-    const cfg = await fetch('/api/config').then((r) => r.json());
-    state.name = cfg.name;
-    for (const k of ['currency', 'openHour', 'closeHour', 'slotMinutes']) if (cfg[k]) state[k] = cfg[k];
-    document.title = cfg.name;
-    document.querySelectorAll('.brand-name').forEach((el) => { el.textContent = cfg.name; });
-    cfg.authed ? showApp() : showLogin();
-  } catch {
-    showLogin();
-  }
-  paintUtils();
-  acquireWake();
-})();
+// changes made on any device arrive live; re-draw quietly (the same guards as the timer apply)
+store?.subscribe(refresh);
+store?.onError((err) => {
+  console.error(err);
+  toast(err?.code === 'permission-denied' ? 'لا توجد صلاحية لحفظ هذا التغيير' : 'تعذّر حفظ آخر تغيير، تحقق من الاتصال');
+});
+
+document.title = state.name;
+document.querySelectorAll('.brand-name').forEach((el) => { el.textContent = state.name; });
+paintUtils();
+acquireWake();
+
+if (!store) {
+  showLogin('الموقع غير مُعدّ بعد: ضع إعدادات Firebase في src/config.js (انظر README)');
+} else {
+  store.onAuth(async (signedIn) => {
+    if (!signedIn) { store.stop(); showLogin(); return; }
+    await store.start();
+    showApp();
+    const btn = $('#loginForm button');
+    btn.disabled = false;
+    btn.textContent = 'دخول';
+  });
+}

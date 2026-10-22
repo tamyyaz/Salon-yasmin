@@ -344,8 +344,9 @@ button, a, input, select, textarea, label { touch-action: manipulation; }
 .util svg { display: block; }
 
 .offline {
-  position: fixed; inset-inline: 0; top: 0; z-index: 80; text-align: center; padding: .55rem 1rem;
-  background: var(--warn); color: #fff; font-weight: 500;
+  position: fixed; top: 4.6rem; inset-inline: 0; margin: 0 auto; width: max-content; max-width: 92vw; z-index: 80;
+  padding: .45rem 1.2rem; border-radius: 999px; text-align: center; font-size: .92rem; font-weight: 500;
+  background: var(--warn); color: #fff; box-shadow: var(--shadow); pointer-events: none;  /* never blocks the buttons underneath */
 }
 
 .modal-top { z-index: 70; }
@@ -453,3 +454,6 @@ button, a, input, select, textarea, label { touch-action: manipulation; }
   .actions { max-width: 330px; }
 }
 @media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+
+.splash { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--rose-50); }
+.splash img { width: 84px; animation: spin 6s linear infinite, bob 3s ease-in-out infinite; }
