@@ -11,7 +11,7 @@ const MAX_TEXT = 800;
 const HOURLY_LIMIT = 25;          // messages one customer may send per hour
 const DAILY_AI_LIMIT = 800;       // total model calls per day (protects the free quota)
 const HUMAN_HOURS = 12;           // silence after a hand-off
-const OWNER_REPLY_HOURS = 6;      // silence after the owner types in the chat herself
+const OWNER_REPLY_HOURS = Number(process.env.OWNER_PAUSE_HOURS ?? 6);   // silence after the owner types in the chat herself (0 = never pause)
 
 export const TOOLS = [
   { name: 'check_availability', description: 'الأوقات الفاضية ليوم معيّن. استعملها دائماً قبل ما تقترح وقت.',
@@ -56,22 +56,28 @@ export function createAgent({ db, gemini, config, booking, knowledge = createKno
   const chats = db.collection('wa_chats');
 
   async function handle({ chatId, text, messageId, fromMe = false }) {
-    if (!String(chatId).endsWith('@c.us')) return null;                 // no groups, no status/broadcast
+    if (!String(chatId).endsWith('@c.us')) { log('skipped: not a private chat', chatId); return null; }   // no groups, no status/broadcast
     const phone = phoneOfChat(chatId);
     const chatRef = chats.doc(phone.slice(1));
     const t = now();
 
     if (messageId) {                                                     // webhooks can be delivered twice
       try { await db.collection('wa_messages').doc(String(messageId).replace(/\W/g, '_')).create({ at: t.toISOString() }); }
-      catch (e) { if (isAlreadyExists(e)) return null; throw e; }
+      catch (e) { if (isAlreadyExists(e)) { log('skipped: duplicate delivery', messageId); return null; } throw e; }
     }
     if (fromMe) {                                                        // the owner is chatting herself: step back
-      await chatRef.set({ humanUntil: t.getTime() + OWNER_REPLY_HOURS * 3600e3 }, { merge: true });
+      if (OWNER_REPLY_HOURS > 0) {
+        await chatRef.set({ humanUntil: t.getTime() + OWNER_REPLY_HOURS * 3600e3 }, { merge: true });
+        log(`you typed in this chat → assistant stays quiet with ${phone} for ${OWNER_REPLY_HOURS} h (run: npm run resume)`);
+      }
       return null;
     }
 
     const chat = (await chatRef.get()).data() || {};
-    if ((chat.humanUntil || 0) > t.getTime()) return null;
+    if ((chat.humanUntil || 0) > t.getTime()) {
+      log(`skipped: assistant is paused for ${phone} until ${new Date(chat.humanUntil).toISOString()} (you typed in the chat, or a hand-off) — run: npm run resume`);
+      return null;
+    }
 
     // per-customer rate limit
     const windowFresh = chat.windowStart && t.getTime() - chat.windowStart < 3600e3;

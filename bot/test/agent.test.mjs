@@ -116,6 +116,21 @@ test('duplicates, groups, voice notes and the owner stepping in', async () => {
   assert.equal(await agent.handle({ chatId: LAYLA, text: 'رجعت', messageId: 'm3' }), 'مرحبا تاني');       // 7 h later it resumes
 });
 
+test('resume tool lifts the pause so the assistant answers again; the log says why it was quiet', async () => {
+  const logs = [];
+  const gemini = fakeGemini([say('أهلين'), say('رجعت أرد')]);
+  const agent = createAgent({ db, gemini, config, booking, now: () => new Date(), log: (...a) => logs.push(a.join(' ')) });
+  await agent.handle({ chatId: LAYLA, text: '', fromMe: true, messageId: 'own1' });                      // owner typed in the chat
+  assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'c1' }), null);
+  assert.ok(logs.some((l) => /paused for \+?962791234567|paused for 962791234567/.test(l) && /npm run resume/.test(l)), 'the log explains the silence');
+  const { spawnSync } = await import('node:child_process');
+  const run = spawnSync(process.execPath, ['tools/resume.mjs', '962791234567'], { env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT }, encoding: 'utf8' });
+  assert.match(run.stdout, /resumed: 962791234567/);
+  assert.equal(await agent.handle({ chatId: LAYLA, text: 'مرحبا', messageId: 'c2' }), 'أهلين');
+  const again = spawnSync(process.execPath, ['tools/resume.mjs'], { env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT }, encoding: 'utf8' });
+  assert.match(again.stdout, /Nothing was paused/);
+});
+
 test('hand-off leaves a pinned note and silences the bot on that chat', async () => {
   const { agent } = agentWith([call('handoff_to_human', { reason: 'شكوى عن صبغة' }), say('رح يتواصل معك الصالون'), say('x')]);
   assert.match(await agent.handle({ chatId: LAYLA, text: 'عندي شكوى', messageId: 'h1' }), /الصالون/);

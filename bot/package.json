@@ -6,7 +6,8 @@
   "description": "WhatsApp booking assistant for the salon (Gemini + Firestore)",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "resume": "node tools/resume.mjs"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",

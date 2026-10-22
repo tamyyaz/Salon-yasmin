@@ -55,6 +55,7 @@ const wa = createWhatsApp({
     publish({ pairingCode: null, qr: null, ...s });
   },
   onMessage: async (m) => {
+    log(m.fromMe ? 'you typed to' : 'message from', m.chatId.slice(0, -5), m.hasMedia ? '(media)' : `(${m.text.length} chars)`);
     if (m.fromMe) { await agent.handle({ chatId: m.chatId, fromMe: true, messageId: m.messageId }); return; }
     const reply = await agent.handle({ chatId: m.chatId, text: m.text, messageId: m.messageId });
     if (reply) { await wa.send(m.chatId, reply); log('replied to', m.chatId.slice(0, -5)); }
