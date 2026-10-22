@@ -22,6 +22,8 @@ node scripts/setup-firebase.mjs --key /path/to/key.json             # الإعد
 السكربت: يتأكد إن المشروع فاضي (وبيرفض يلمس مشروع فيه تطبيقات أو بيانات أو موقع منشور)، يسجّل تطبيق الويب ويكتب إعداداته
 بـ `src/config.js` و`.firebaserc`، ينشئ حساب الصالون (`salon@yasmin.app` وكلمة سر عشوائية بتظهر مرة وحدة، بتغيّرها من
 Authentication ← Users)، ثم يبني وينشر القواعد والموقع.
+إذا رفضت أداة Firebase CLI المفتاح (تحتاج صلاحيات إضافية) بينشر عبر REST تلقائياً (`scripts/deploy-rest.mjs`).
+لنشر تحديث لاحقاً بنفس المفتاح: `npm run build && node scripts/deploy-rest.mjs --key /path/key.json`.
 **بعدها احذف المفتاح** من Google Cloud ← IAM ← Service accounts ← Keys.
 
 ### الطريقة اليدوية (بدل السكربت)

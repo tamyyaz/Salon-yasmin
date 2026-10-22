@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { GoogleAuth } from 'google-auth-library';
+import { deployRest } from './deploy-rest.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(`--${name}`); return i === -1 ? null : args[i + 1] ?? true; };
@@ -139,6 +140,11 @@ const run = (cmd, a, env = {}) => {
   if (r.status) stop(`${cmd} ${a.join(' ')} failed`);
 };
 run('npm', ['run', 'build']);
-run('npx', ['firebase', 'deploy', '--only', 'hosting,firestore:rules', '--project', P, '--non-interactive'], { GOOGLE_APPLICATION_CREDENTIALS: keyFile });
+const cli = spawnSync('npx', ['firebase', 'deploy', '--only', 'hosting,firestore:rules', '--project', P, '--non-interactive'],
+  { stdio: 'inherit', env: { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: keyFile } });
+if (cli.status) {
+  console.log('\n  Firebase CLI refused this key; deploying through the REST APIs instead…');
+  await deployRest(keyFile);
+}
 console.log(`\n✔ Done. Open ${site.defaultUrl} and sign in with the salon password.`);
 console.log('  Next: delete the service-account key you used (Google Cloud → IAM → Service accounts → Keys).');
