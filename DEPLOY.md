@@ -1,27 +1,42 @@
 # النشر على Firebase (`web.app`) وتجهيز التابلت
 
-مشروع Firebase الحالي عندك (اللي دومينه `xxxx.web.app`) بيكفي. `xxxx` هو **Project ID**.
+> **استخدم مشروع Firebase جديد وفاضي للصالون** (مو مشروع فيه تطبيقات أو بيانات ثانية). قواعد Firestore والمستخدمين
+> بتكون على مستوى المشروع كله، فخلط الصالون مع منصة ثانية بيعرّض الاتنين للخطر. الدومين بيكون `<project-id>.web.app`.
 
-## 1) إعدادات Firebase (مرة وحدة، من الـ Console)
+## 1) إعداد المشروع (طريقة سريعة: سكربت)
 
-1. **تطبيق ويب:** Project settings ← General ← Your apps ← أيقونة `</>` ← سمّه «salon» (بدون Hosting)
-   ← انسخ قيم `firebaseConfig`.
-2. ضعها في `src/config.js` مكان `REPLACE_…` (apiKey, authDomain, projectId, appId).
-   وغيّر `salonName` و`currency` و`openHour/closeHour` إذا بدك.
-3. **الدخول:** Build ← Authentication ← Get started ← Sign-in method ← فعّل **Email/Password**.
-   ثم Users ← **Add user**: البريد `salon@yasmin.app` وكلمة السر اللي بدك (هي كلمة سر الصالون).
-   وإذا لقيت بـ Settings ← User actions خيار **Enable create (sign-up)** عطّله (حماية إضافية).
-4. **القاعدة:** Build ← Firestore Database ← Create database ← **Production mode** ← اختر أقرب منطقة (لا تتغيّر بعدين).
-5. **قواعد الأمان (مهم جداً):** Firestore ← تبويب **Rules** ← الصق محتوى `firestore.rules` كله ← **Publish**.
-   (أو من جهازك: `npx firebase login` ثم `npx firebase deploy --only firestore:rules`.)
-6. ضع Project ID في `.firebaserc` (مكان `YOUR-PROJECT-ID`).
+من الـ Console، 3 خطوات (دقيقتين):
+
+1. **Add project** ← سمّه مثلاً `salon-yasmin` (الـ Project ID بيصير دومينك) ← عطّل Google Analytics.
+2. **Build ← Firestore Database ← Create database** ← *Production mode* ← أقرب منطقة (ما بتتغيّر بعدين).
+3. **Build ← Authentication ← Get started ← Sign-in method ← Email/Password ← Enable.**
+
+ثم: **Project settings ← Service accounts ← Generate new private key** (بينزل ملف JSON — لا ترفعه لـ git أبداً). وشغّل:
+
+```bash
+npm install
+node scripts/setup-firebase.mjs --key /path/to/key.json --dry-run   # فحص فقط، ما بيغيّر شي
+node scripts/setup-firebase.mjs --key /path/to/key.json             # الإعداد الفعلي
+```
+
+السكربت: يتأكد إن المشروع فاضي (وبيرفض يلمس مشروع فيه تطبيقات أو بيانات أو موقع منشور)، يسجّل تطبيق الويب ويكتب إعداداته
+بـ `src/config.js` و`.firebaserc`، ينشئ حساب الصالون (`salon@yasmin.app` وكلمة سر عشوائية بتظهر مرة وحدة، بتغيّرها من
+Authentication ← Users)، ثم يبني وينشر القواعد والموقع.
+**بعدها احذف المفتاح** من Google Cloud ← IAM ← Service accounts ← Keys.
+
+### الطريقة اليدوية (بدل السكربت)
+
+1. Project settings ← Your apps ← `</>` ← سجّل تطبيق ويب وانسخ `firebaseConfig` إلى `src/config.js`، وضع Project ID بـ `.firebaserc`.
+2. Authentication ← Users ← **Add user**: `salon@yasmin.app` + كلمة السر. (عطّل **Enable create (sign-up)** إن وُجد.)
+3. Firestore ← **Rules** ← الصق `firestore.rules` ← Publish.
+4. `npx firebase login` ثم `npm run deploy`.
 
 > البريد `salon@yasmin.app` مكتوب بمكانين: `src/config.js` و`firestore.rules`. إذا غيّرته غيّره بالاثنين.
 
-## 2) النشر التلقائي من GitHub
+## 2) النشر التلقائي من GitHub (اختياري)
 
 الـ workflow جاهز (`.github/workflows/deploy.yml`): كل دمج بفرع `main` بيبني الموقع وبينشره على `web.app`.
-بدو سرّ واحد:
+بدو سرّ واحد (استخدم حساب خدمة مخصّص بصلاحيات محدودة، مش مفتاح الـ Admin SDK):
 
 1. Google Cloud Console ← IAM & Admin ← **Service Accounts** ← Create: اسمه `github-deploy`
    بصلاحيات **Firebase Hosting Admin** و**API Keys Viewer**.
