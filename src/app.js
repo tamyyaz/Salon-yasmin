@@ -337,7 +337,7 @@ async function renderClients() {
 async function renderServices() {
   const [services, info] = await Promise.all([api('/services'), api('/settings')]);
   const infoFields = [
-    ['about', 'نبذة عن الصالون', 'textarea'], ['address', 'العنوان', 'input'], ['maps_url', 'رابط الموقع على الخريطة', 'input'],
+    ['assistant_name', 'اسم مساعدة واتساب (بتعرّف عن حالها فيه)', 'input'], ['about', 'نبذة عن الصالون', 'textarea'], ['address', 'العنوان', 'input'], ['maps_url', 'رابط الموقع على الخريطة', 'input'],
     ['hours_text', 'ساعات الدوام (نص يظهر للزبائن)', 'input'], ['payment', 'طرق الدفع', 'input'], ['policies', 'سياسة الإلغاء والمواعيد', 'textarea'],
   ];
   view.innerHTML = `

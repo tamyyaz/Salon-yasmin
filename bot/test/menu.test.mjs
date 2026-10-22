@@ -71,6 +71,14 @@ test('day and time parsing', () => {
   assert.equal(time('بكرا'), null);
 });
 
+test('the assistant introduces herself as Layan, or by the name the owner sets in the app', async () => {
+  assert.match(await sayTo(newAgent())('مرحبا'), /أنا ليان، مساعدتك الافتراضية/);
+  await db.doc('settings/salon').set({ assistant_name: 'سلمى', faq: [] }, { merge: true });
+  const renamed = await sayTo(newAgent(), RANA)('هلا');
+  assert.match(renamed, /أنا سلمى/);
+  assert.ok(!renamed.includes('ليان'));
+});
+
 test('prices, address, hours, payment, FAQ and greetings come from the owner\'s data', async () => {
   const say = sayTo(newAgent());
   assert.match(await say('مرحبا'), /1️⃣ الأسعار/);

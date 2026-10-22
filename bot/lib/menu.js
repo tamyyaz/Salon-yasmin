@@ -2,6 +2,7 @@
 // It understands the common things customers ask (prices, address, hours, FAQ, booking) from the
 // salon's own data and walks the customer through a booking step by step.
 import { norm, keywords, mentions, isYes, isNo } from './arabic.js';
+import { assistantName } from './knowledge.js';
 import { BookingError } from './booking.js';
 import { WEEKDAYS_AR, addDays, weekdayOf } from './time.js';
 
@@ -26,7 +27,7 @@ export function createMenu({ booking, config }) {
   const slotsList = (slots) => slots.join('  •  ');
   const bad = (message) => ({ reject: message });
 
-  const menuText = () => `أهلاً فيكي في ${config.name} 🌸
+  const menuText = (kb) => `أهلاً فيكي في ${config.name} 🌸\nأنا ${assistantName(kb || { info: {} }, config)}، مساعدتك الافتراضية.
 شو بدك؟ اكتبي الرقم:
 1️⃣ الأسعار
 2️⃣ حجز موعد
@@ -259,8 +260,8 @@ export function createMenu({ booking, config }) {
     };
     const out = (text, extra = {}) => ({ reply: text, flow: ctx.flow ? { ...ctx.flow, at: stamp() } : null, savedName: rememberedName, ...extra });
 
-    if (/^(قائمه|قايمه|القائمه|القايمه|menu|رجوع|ابدا|0)$/.test(n)) { ctx.flow = null; return out(menuText()); }
-    if (flow && /^(الغاء|الغي|كنسل|cancel|خروج)$/.test(n)) { ctx.flow = null; return out('تمام، رجعنا للقائمة 🌸\n' + menuText()); }
+    if (/^(قائمه|قايمه|القائمه|القايمه|menu|رجوع|ابدا|0)$/.test(n)) { ctx.flow = null; return out(menuText(input.kb)); }
+    if (flow && /^(الغاء|الغي|كنسل|cancel|خروج)$/.test(n)) { ctx.flow = null; return out('تمام، رجعنا للقائمة 🌸\n' + menuText(input.kb)); }
 
     const num = /^[1-5]$/.test(n) ? n : null;
     const faq = num ? null : matchFaq(n, input.kb.info.faq);
@@ -303,13 +304,13 @@ export function createMenu({ booking, config }) {
       return out((wantsAddress ? whereText(input.kb) : hoursText(input.kb)) + keepFlow);
     }
     if (mentions(n, W.pay) && input.kb.info.payment) return out(`💳 ${input.kb.info.payment}${keepFlow}`);
-    if (mentions(n, W.greet) && n.split(' ').length <= 4 && !flow) return out(menuText());
+    if (mentions(n, W.greet) && n.split(' ').length <= 4 && !flow) return out(menuText(input.kb));
     if (rejected) return out(rejected);
 
     // not understood: help once, then pass to the salon
     const misses = (input.misses || 0) + 1;
     if (misses >= 2) return out('ما قدرت أفهم طلبك 🙏 بلّغت الصالون وبيتواصلوا معك بأقرب وقت.', { handoff: `رسالة ما فهمها المساعد: «${String(input.text).slice(0, 120)}»`, misses: 0, unknown: true });
-    return out(`ما فهمت قصدك 🙏\n${menuText()}`, { misses, unknown: true });
+    return out(`ما فهمت قصدك 🙏\n${menuText(input.kb)}`, { misses, unknown: true });
   }
 
   return { reply, menuText, parseDay, parseTime };

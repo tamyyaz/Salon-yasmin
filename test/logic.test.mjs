@@ -109,6 +109,8 @@ test('services and salon info are validated and trimmed', () => {
   assert.deepEqual(parseService({ active: false }, { partial: true }), { active: false });
   const st = parseSettings({ about: ' صالون ', faq: [{ q: 'وين؟', a: 'بالمزة' }, { q: '', a: 'x' }, { q: 'y', a: '' }], hours_text: 'يومياً 9-9' });
   assert.deepEqual([st.about, st.hours_text, st.faq.length, st.address], ['صالون', 'يومياً 9-9', 1, '']);
+  assert.equal(parseSettings({ assistant_name: '  ليان  ' }).assistant_name, 'ليان');
+  assert.equal(parseSettings({ assistant_name: 'x'.repeat(100) }).assistant_name.length, 40);
   assert.equal(parseSettings({ faq: Array.from({ length: 50 }, () => ({ q: 'q', a: 'a' })) }).faq.length, 30);
   assert.deepEqual(sortServices([{ name: 'ب' }, { name: 'أ' }]).map((x) => x.name), ['أ', 'ب']);
 });

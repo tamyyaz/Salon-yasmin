@@ -21,6 +21,9 @@ export function createKnowledge({ db, config, ttlMs = 30000, now = () => Date.no
   return { load, invalidate: () => { cache = null; } };
 }
 
+/** The assistant's name: set in the app (Services screen), else salon.config.js. */
+export const assistantName = (kb, config) => kb.info?.assistant_name || config.assistantName || 'المساعدة';
+
 /** The knowledge as prompt text (Arabic). Only what the owner wrote — nothing is invented here. */
 export function knowledgeText(kb, config) {
   const { services, info } = kb;

@@ -79,6 +79,8 @@ test('services and salon settings: validated, salon-only, single settings doc', 
   await assertFails(getDoc(doc(anon(), 'services/s1')));
   const info = { about: '', address: 'المزة', maps_url: '', hours_text: '', payment: '', policies: '', faq: [{ q: 'q', a: 'a' }] };
   await assertSucceeds(setDoc(doc(db, 'settings/salon'), info));
+  await assertSucceeds(setDoc(doc(db, 'settings/salon'), { ...info, assistant_name: 'ليان' }));
+  await assertFails(setDoc(doc(db, 'settings/salon'), { ...info, assistant_name: 'x'.repeat(41) }));
   await assertFails(setDoc(doc(db, 'settings/other'), info));
   await assertFails(setDoc(doc(db, 'settings/salon'), { ...info, faq: 'x' }));
   await assertFails(setDoc(doc(stranger(), 'settings/salon'), info));

@@ -175,6 +175,8 @@ test('answers come from what the owner wrote in the app: prices, info, FAQ — a
   assert.ok(!p.includes('خدمة مخفية'));                                        // hidden services are not offered
   assert.ok(!p.includes('قص شعر'));                                             // the file's sample list is replaced once the app has services
   assert.match(p, /لا تخمني/);                                                  // unknown → ask the salon, don't guess
+  assert.match(p, /اسمك ليان/);                                                 // persona
+  assert.match(p, /ما تدّعي إنك إنسانة/);                                       // never pretends to be a person
 });
 
 test('a booking takes its price from the service list the owner maintains', async () => {

@@ -3,7 +3,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { BookingError, phoneOfChat } from './booking.js';
 import { WEEKDAYS_AR } from './time.js';
-import { createKnowledge, knowledgeText } from './knowledge.js';
+import { createKnowledge, knowledgeText, assistantName } from './knowledge.js';
 import { createMenu } from './menu.js';
 
 const HISTORY_TURNS = 16;
@@ -32,7 +32,9 @@ export const TOOLS = [
 
 export function systemPrompt(config, clock, kb) {
   const closed = config.closedWeekdays.length ? config.closedWeekdays.map((d) => WEEKDAYS_AR[d]).join('، ') : 'ما في';
-  return `إنتي مساعدة واتساب لـ "${config.name}" (صالون تجميل نسائي). بتحكي باللهجة الشامية البسيطة، بجمل قصيرة ولطيفة، وبدون مبالغة بالإيموجي.
+  const who = assistantName(kb, config);
+  return `اسمك ${who}، وإنتي مساعدة واتساب الافتراضية لـ "${config.name}" (صالون تجميل نسائي). بتحكي باللهجة الشامية البسيطة، بجمل قصيرة ودافية، وبدون مبالغة بالإيموجي. عرّفي عن حالك باسمك أول ما تبدأ المحادثة ("أنا ${who} من ${config.name}").
+إذا حدا سألك إذا إنتي إنسانة أو روبوت، جاوبي بصراحة إنك المساعدة الافتراضية للصالون وإنو الصالون بيتابع معها عند الحاجة. ما تدّعي إنك إنسانة أبداً.
 الآن: ${WEEKDAYS_AR[clock.weekday]} ${clock.date} الساعة ${clock.time} (بتوقيت الصالون).
 دوام الصالون من ${config.openHour}:00 لـ ${config.closeHour}:00. أيام العطلة: ${closed}.
 

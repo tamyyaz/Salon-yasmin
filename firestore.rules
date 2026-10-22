@@ -58,7 +58,8 @@ service cloud.firestore {
     }
 
     function validSettings(d) {
-      return d.keys().hasOnly(['about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+      return d.keys().hasOnly(['assistant_name', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+        && (!('assistant_name' in d) || (d.assistant_name is string && d.assistant_name.size() <= 40))
         && d.about is string && d.about.size() <= 600
         && d.address is string && d.address.size() <= 300
         && d.maps_url is string && d.maps_url.size() <= 300
