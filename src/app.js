@@ -616,6 +616,39 @@ $('#wakeBtn').addEventListener('click', () => {
   else { wakeLock?.release(); toast('عاد انطفاء الشاشة التلقائي'); }
   paintUtils();
 });
+// WhatsApp assistant status (the bot writes a heartbeat; the button stays hidden if no bot was ever set up)
+const BOT_TEXT = {
+  connected: 'متصل ويرد على الزبائن ✅', connecting: 'عم يتصل…', qr: 'بانتظار ربط الرقم (QR بشاشة جهاز البوت)',
+  pairing: 'بانتظار ربط الرقم بكود', offline: 'غير متصل', logged_out: 'انفصل الرقم عن واتساب — لازم تعيدي الربط',
+};
+function botHealth() {
+  const s = store?.botStatus;
+  if (!s) return null;
+  const fresh = Date.now() - new Date(s.updatedAt).getTime() < 5 * 60 * 1000;
+  const level = !fresh ? 'off' : s.state === 'connected' ? 'ok' : ['connecting', 'qr', 'pairing'].includes(s.state) ? 'warn' : 'off';
+  return { s, fresh, level };
+}
+function paintBot() {
+  const btn = $('#botBtn');
+  const h = botHealth();
+  btn.classList.toggle('hidden', !h);
+  if (h) { btn.classList.remove('ok', 'warn', 'off'); btn.classList.add(h.level); }
+}
+$('#botBtn').addEventListener('click', () => {
+  const h = botHealth();
+  if (!h) return;
+  const { s, fresh } = h;
+  openModal(`
+    <h3>مساعد واتساب</h3>
+    <p><b>${fresh ? BOT_TEXT[s.state] || esc(s.state) : 'غير متصل — جهاز البوت مطفي أو بلا إنترنت ⚠️'}</b></p>
+    ${s.number ? `<p class="muted">الرقم: <span dir="ltr">+${esc(s.number)}</span></p>` : ''}
+    ${s.pairingCode ? `<p>على الموبايل: واتساب ← الأجهزة المرتبطة ← ربط جهاز ← <b>الربط برقم الهاتف</b> وأدخلي:</p><div class="pair-code">${esc(s.pairingCode)}</div>` : ''}
+    <p class="muted">آخر إشارة: ${esc(fmtStamp(s.updatedAt))}</p>
+    <div class="modal-actions"><button class="btn" type="button" data-close>إغلاق</button></div>`,
+    (card) => card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal)));
+});
+setInterval(paintBot, 30000);
+
 $('#fxBtn').addEventListener('click', () => {
   window.salonFx?.setEnabled(!window.salonFx.enabled);
   paintUtils();
@@ -641,7 +674,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ac
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 // changes made on any device arrive live; re-draw quietly (the same guards as the timer apply)
-store?.subscribe(refresh);
+store?.subscribe(() => { paintBot(); refresh(); });
 store?.onError((err) => {
   console.error(err);
   toast(err?.code === 'permission-denied' ? 'لا توجد صلاحية لحفظ هذا التغيير' : 'تعذّر حفظ آخر تغيير، تحقق من الاتصال');

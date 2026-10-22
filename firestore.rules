@@ -43,6 +43,11 @@ service cloud.firestore {
       allow create, update: if isSalon() && validAppointment(request.resource.data);
     }
 
+    // written only by the WhatsApp bot (Admin SDK); the app just shows it
+    match /bot_status/{id} {
+      allow read: if isSalon();
+    }
+
     match /notes/{id} {
       allow read, delete: if isSalon();
       allow create, update: if isSalon() && validNote(request.resource.data);

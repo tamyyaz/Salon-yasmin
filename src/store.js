@@ -60,6 +60,7 @@ export function createStore({
   const inRecent = new Set();
   const inUnpaid = new Set();
   const notes = new Map();
+  let botStatus = null;            // heartbeat written by the WhatsApp bot, if one is running
   const listeners = new Set();
   const errorHandlers = new Set();
   let unsubs = [];
@@ -108,16 +109,17 @@ export function createStore({
   async function start() {
     stop();
     windowStart = addDays(today(), -recentDays);
-    const listen = (q, onChange) => new Promise((resolve) => {
+    const listen = (label, q, onChange) => new Promise((resolve) => {
       let first = true;
       const settle = () => { if (first) { first = false; resolve(); } };
-      unsubs.push(onSnapshot(q, (snap) => { onChange(snap); notify(); settle(); }, (err) => { reportError(err); settle(); }));
+      unsubs.push(onSnapshot(q, (snap) => { onChange(snap); notify(); settle(); }, (err) => { console.warn(`[firestore listener failed: ${label}]`, err.code, err.message); reportError(err); settle(); }));
     });
     // resolve once the first data (cache or server) has arrived; never block the UI for long
     await withTimeout(Promise.all([
-      listen(query(apptCol, where('date', '>=', windowStart)), (s) => applyAppointments(s, inRecent)),
-      listen(query(apptCol, where('due', '>', 0)), (s) => applyAppointments(s, inUnpaid)),
-      listen(notesCol, applyNotes),
+      listen('recent appointments', query(apptCol, where('date', '>=', windowStart)), (s) => applyAppointments(s, inRecent)),
+      listen('unpaid appointments', query(apptCol, where('due', '>', 0)), (s) => applyAppointments(s, inUnpaid)),
+      listen('notes', notesCol, applyNotes),
+      listen('bot status', doc(db, 'bot_status', 'main'), (snap) => { botStatus = snap.exists() ? snap.data() : null; }),
     ]), 8000).catch(() => {});
   }
 
@@ -330,5 +332,6 @@ export function createStore({
     subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
     onError: (fn) => { errorHandlers.add(fn); return () => errorHandlers.delete(fn); },
     get windowStart() { return windowStart; },
+    get botStatus() { return botStatus; },
   };
 }

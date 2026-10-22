@@ -5,3 +5,9 @@ dist/
 firestore-debug.log
 ui-debug.log
 .firebase/
+
+# WhatsApp bot secrets: never commit these
+bot/.env
+bot/auth/
+bot/service-account*.json
+*-firebase-adminsdk-*.json

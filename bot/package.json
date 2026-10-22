@@ -9,6 +9,9 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "firebase-admin": "^13.0.0",
+    "pino": "^10.4.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

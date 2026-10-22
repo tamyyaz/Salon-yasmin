@@ -66,6 +66,14 @@ test('bot-created requests: pending status and the optional source/wa_notified f
   await assertFails(setDoc(doc(db, 'appointments/w3'), appt({ wa_notified: 5 })));
 });
 
+test('bot_status is readable by the salon only and never writable from the app', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'bot_status/main'), { state: 'connected', updatedAt: 'now' }));
+  await assertSucceeds(getDoc(doc(salon(), 'bot_status/main')));
+  await assertFails(getDoc(doc(stranger(), 'bot_status/main')));
+  await assertFails(getDoc(doc(anon(), 'bot_status/main')));
+  await assertFails(setDoc(doc(salon(), 'bot_status/main'), { state: 'hacked', updatedAt: 'now' }));
+});
+
 test('notes are validated and other collections stay closed', async () => {
   const db = salon();
   await assertSucceeds(setDoc(doc(db, 'notes/n1'), { text: 'مواد صبغة', pinned: false, done: false, created_at: 'now' }));
