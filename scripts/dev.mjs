@@ -7,7 +7,7 @@ const build = run('node', ['scripts/build.mjs']);
 build.on('exit', (code) => {
   if (code) process.exit(code);
   const children = [
-    run('npx', ['firebase', 'emulators:start', '--only', 'auth,firestore', '--project', 'demo-salon']),
+    run('npx', ['firebase', 'emulators:start', '--only', 'auth,firestore', '--project', 'salon-yasmin']),
     run('node', ['scripts/serve.mjs', '--emulator']),
   ];
   const stop = () => children.forEach((c) => c.kill());

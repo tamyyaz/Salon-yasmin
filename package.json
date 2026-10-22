@@ -6,10 +6,11 @@
     "build": "node scripts/build.mjs",
     "test": "node --test test/logic.test.mjs",
     "test:emu": "firebase emulators:exec --only auth,firestore --project demo-salon \"node --test test/emu/rules.test.mjs test/emu/store.test.mjs\"",
-    "emulators": "firebase emulators:start --only auth,firestore --project demo-salon",
+    "emulators": "firebase emulators:start --only auth,firestore --project salon-yasmin",
     "serve": "node scripts/serve.mjs",
     "dev": "node scripts/dev.mjs",
-    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules"
+    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules",
+    "test:bot": "firebase emulators:exec --only firestore --project demo-salon-bot \"npm --prefix bot test\""
   },
   "repository": {
     "type": "git",

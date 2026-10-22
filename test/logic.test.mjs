@@ -80,6 +80,14 @@ test('day stats include collected cash and all-time outstanding', () => {
   assert.deepEqual([s.total, s.came, s.no_show, s.walk_in, s.collected, s.outstanding], [3, 2, 1, 1, 80, 120]);
 });
 
+test('pending (customer-requested) appointments are counted but never owed', () => {
+  const list = [appt({ date: '2026-03-01', status: 'pending', price: 100 }), appt({ date: '2026-03-01', status: 'booked', price: 50 })];
+  assert.equal(dueOf(list[0]), 0);
+  const s = dayStats(list, '2026-03-01');
+  assert.deepEqual([s.total, s.pending, s.booked, s.outstanding], [2, 1, 1, 50]);
+  assert.equal(parseAppointment({ status: 'pending' }, { partial: true }).status, 'pending');
+});
+
 test('notes: open before done, pinned first, newest first', () => {
   const n = (id, o) => ({ id, text: id, pinned: false, done: false, created_at: `2026-01-0${id}`, ...o });
   const sorted = sortNotes([n('1', { done: true }), n('2'), n('3', { pinned: true }), n('4')]);

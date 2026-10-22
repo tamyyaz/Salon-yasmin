@@ -21,7 +21,7 @@ const store = emulator || configured
   : null;
 const api = (path, opts) => store.api(path, opts);
 
-const STATUS_LABEL = { booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
+const STATUS_LABEL = { pending: 'بانتظار التأكيد', booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
 const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, notes: renderNotes };
 
 // ---------- helpers ----------
@@ -118,11 +118,21 @@ $('#logout').addEventListener('click', async () => {
 });
 
 // ---------- routing ----------
+// small count on the "appointments" tab: requests waiting for the salon's confirmation
+async function updatePendingBadge() {
+  try {
+    const n = (await api(`/appointments?status=pending&from=${ymd(new Date())}`)).length;
+    const link = $('#nav a[data-route="appointments"]');
+    if (n) link.dataset.badge = n; else delete link.dataset.badge;
+  } catch { /* offline: keep the previous badge */ }
+}
+
 async function route({ silent = false } = {}) {
   const name = (location.hash.replace('#/', '') || 'today').split('?')[0];
   const key = ROUTES[name] ? name : 'today';
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
   view.classList.toggle('no-anim', silent);   // background refreshes shouldn't replay the entrance animation
+  updatePendingBadge();
   if (!silent) return attempt(() => ROUTES[key]());
   const y = window.scrollY;
   try { await ROUTES[key](); window.scrollTo(0, y); } catch { /* the offline banner already tells the story */ }
@@ -161,22 +171,26 @@ function apptCard(a, { showDate = false } = {}) {
       <div class="appt-name">${esc(a.client_name)}
         <span class="chip chip-${a.status}">${STATUS_LABEL[a.status]}</span>
         ${a.walk_in ? '<span class="chip chip-walkin">زبون مفاجئ</span>' : ''}
+        ${a.source === 'whatsapp' ? '<span class="chip chip-wa">واتساب</span>' : ''}
       </div>
       <div class="appt-meta">${a.service ? `<span>${esc(a.service)}</span>` : ''}${phone}</div>
       ${a.note ? `<div class="appt-note">📝 ${esc(a.note)}</div>` : ''}
       <div class="money">
         <span>السعر: <b>${money(a.price)}</b></span>
         <span>المدفوع: <b>${money(a.paid)}</b></span>
-        ${['cancelled', 'no_show'].includes(a.status) ? '' : `<span class="${remClass}">المتبقي: <b>${money(a.remaining)}</b></span>`}
+        ${['cancelled', 'no_show', 'pending'].includes(a.status) ? '' : `<span class="${remClass}">المتبقي: <b>${money(a.remaining)}</b></span>`}
       </div>
     </div>
     <div class="actions">
+      ${a.status === 'pending' ? `<button class="btn btn-ok btn-sm" data-act="status" data-status="booked">تأكيد ✓</button>
+        <button class="btn btn-danger btn-sm" data-act="reject">رفض</button>
+        <button class="btn btn-sm" data-act="edit">تعديل</button>` : `
       ${done ? '' : `<button class="btn btn-ok btn-sm" data-act="status" data-status="came">حضر ✓</button>`}
       ${a.status === 'booked' ? `<button class="btn btn-danger btn-sm" data-act="status" data-status="no_show">لم يحضر</button>` : ''}
       ${['came', 'no_show', 'cancelled'].includes(a.status) ? `<button class="btn btn-sm" data-act="status" data-status="booked">إعادة للحجز</button>` : ''}
       <button class="btn btn-primary btn-sm" data-act="pay">دفعات</button>
       <button class="btn btn-sm" data-act="edit">تعديل</button>
-      ${a.status === 'booked' ? `<button class="btn btn-sm" data-act="status" data-status="cancelled">إلغاء</button>` : ''}
+      ${a.status === 'booked' ? `<button class="btn btn-sm" data-act="status" data-status="cancelled">إلغاء</button>` : ''}`}
     </div>
   </article>`;
 }
@@ -193,6 +207,9 @@ view.addEventListener('click', async (e) => {
       if (a.status === 'came' && a.remaining > 0) toast(`تم التسجيل — المتبقي على ${a.client_name}: ${money(a.remaining)}`);
       reload();
     }
+  } else if (btn.dataset.act === 'reject') {
+    if (!(await ask('رفض هذا الحجز؟ (يُلغى ويتحرّر الوقت)', { yes: 'رفض', danger: true }))) return;
+    if (await attempt(() => api(`/appointments/${id}`, { method: 'PATCH', body: { status: 'cancelled' } }))) reload();
   } else if (btn.dataset.act === 'pay') {
     openPayments(id);
   } else if (btn.dataset.act === 'edit') {
@@ -204,8 +221,12 @@ view.addEventListener('click', async (e) => {
 // ---------- views ----------
 async function renderToday() {
   const date = state.date;
-  const [list, stats] = await Promise.all([api(`/appointments?date=${date}`), api(`/stats?date=${date}`)]);
-  const isToday = date === ymd(new Date());
+  const todayStr = ymd(new Date());
+  const [dayList, stats, pending] = await Promise.all([
+    api(`/appointments?date=${date}`), api(`/stats?date=${date}`), api(`/appointments?status=pending&from=${todayStr}`),
+  ]);
+  const list = dayList.filter((a) => a.status !== 'pending' || a.date < todayStr);   // upcoming requests live in their own section
+  const isToday = date === todayStr;
   view.innerHTML = `
     ${hero({
       title: isToday ? 'اليوم' : fmtDate(date),
@@ -218,6 +239,8 @@ async function renderToday() {
     })}
     <div class="today-layout">
     <section class="today-main">
+      ${pending.length ? `<div class="section-title"><h3>بانتظار تأكيدك (${pending.length})</h3></div>
+      <div class="list pending-list">${pending.map((a) => apptCard(a, { showDate: true })).join('')}</div>` : ''}
       <div class="section-title"><h3>مواعيد اليوم</h3></div>
       <div class="list">${list.length ? list.map((a) => apptCard(a)).join('') : emptyState('لا توجد مواعيد في هذا اليوم')}</div>
     </section>

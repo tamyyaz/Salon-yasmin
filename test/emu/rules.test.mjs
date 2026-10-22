@@ -58,6 +58,14 @@ test('malformed appointments are rejected', async () => {
   await assertFails(updateDoc(doc(db, 'appointments/ok'), { price: -3 }));
 });
 
+test('bot-created requests: pending status and the optional source/wa_notified fields', async () => {
+  const db = salon();
+  await assertSucceeds(setDoc(doc(db, 'appointments/w1'), appt({ status: 'pending', source: 'whatsapp', wa_notified: 'pending' })));
+  await assertSucceeds(updateDoc(doc(db, 'appointments/w1'), { status: 'booked' }));      // the salon confirms it
+  await assertFails(setDoc(doc(db, 'appointments/w2'), appt({ source: 'telegram' })));
+  await assertFails(setDoc(doc(db, 'appointments/w3'), appt({ wa_notified: 5 })));
+});
+
 test('notes are validated and other collections stay closed', async () => {
   const db = salon();
   await assertSucceeds(setDoc(doc(db, 'notes/n1'), { text: 'مواد صبغة', pinned: false, done: false, created_at: 'now' }));

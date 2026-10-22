@@ -1,7 +1,8 @@
 // Pure salon logic: validation, balances, client ledger, stats.
 // No Firebase or DOM in here so it can be unit-tested directly.
 
-export const STATUSES = ['booked', 'came', 'no_show', 'cancelled'];
+// `pending` = requested by a customer (e.g. through the WhatsApp assistant), waiting for the salon to confirm
+export const STATUSES = ['pending', 'booked', 'came', 'no_show', 'cancelled'];
 const OWING = ['booked', 'came']; // cancelled / no-show appointments never count as money owed
 
 // ---------- local-date helpers (the salon thinks in the tablet's own calendar) ----------
@@ -111,6 +112,7 @@ export function dayStats(list, date) {
   const count = (s) => day.filter((a) => a.status === s).length;
   return {
     total: day.length,
+    pending: count('pending'),
     booked: count('booked'),
     came: count('came'),
     no_show: count('no_show'),

@@ -240,6 +240,8 @@ input[type=date], input[type=time], input[type=tel], input[type=number] { direct
 .chip-came { background: #e3f3ea; color: var(--ok); }
 .chip-no_show { background: #fbe4e6; color: var(--danger); }
 .chip-cancelled { background: var(--silver-200); color: var(--silver-500); }
+.chip-pending { background: #fff1d6; color: #9a6a12; box-shadow: inset 0 0 0 1px #f0cf8a; }
+.chip-wa { background: #e3f3ea; color: var(--ok); }
 .chip-walkin { background: var(--rose-grad); color: #fff; }
 
 .empty { text-align: center; padding: 2.2rem 1rem; color: var(--silver-500); }
@@ -457,3 +459,11 @@ button, a, input, select, textarea, label { touch-action: manipulation; }
 
 .splash { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--rose-50); }
 .splash img { width: 84px; animation: spin 6s linear infinite, bob 3s ease-in-out infinite; }
+
+/* requests from WhatsApp waiting for confirmation */
+.appt.is-pending { box-shadow: 0 0 0 2px #f0cf8a, var(--shadow); background: linear-gradient(135deg, #fffaf0, rgba(255,255,255,.86)); }
+.pending-list { margin-bottom: .4rem; }
+.nav a[data-badge]::after {
+  content: attr(data-badge); display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; margin-inline-start: .4rem; padding: 0 .35rem;
+  border-radius: 999px; background: var(--warn); color: #fff; font-size: .78rem; font-weight: 700; animation: pop .6s ease 2;
+}
