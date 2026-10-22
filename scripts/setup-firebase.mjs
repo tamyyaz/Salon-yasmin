@@ -107,9 +107,12 @@ if (!hasDb) {
   if (enabled.__error) todo.push(`Firestore Database → Create database (production mode, location ${location})`);
   else {
     if (firestoreApiOff) await waitOp((n) => `https://serviceusage.googleapis.com/v1/${n}`, enabled, 'Enabling the Firestore API');
-    await waitOp((n) => `https://firestore.googleapis.com/v1/${n}`,
-      await call(`https://firestore.googleapis.com/v1/projects/${P}/databases?databaseId=(default)`, 'POST', { type: 'FIRESTORE_NATIVE', locationId: location }), 'Creating the database');
-    console.log('  database created');
+    const created = await tolerant(() => call(`https://firestore.googleapis.com/v1/projects/${P}/databases?databaseId=(default)`, 'POST', { type: 'FIRESTORE_NATIVE', locationId: location }));
+    if (created.__error) todo.push(`Firestore Database → Create database (production mode, location ${location})  [${created.__error.replace(/^.*→ /, '')}]`);
+    else {
+      await waitOp((n) => `https://firestore.googleapis.com/v1/${n}`, created, 'Creating the database');
+      console.log('  database created');
+    }
   }
 }
 if (todo.length) {
