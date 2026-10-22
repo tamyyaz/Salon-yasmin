@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { createStore } from './store.js';
+import qrcode from 'qrcode-generator';
 import { ymd, parseYmd, addDays } from './logic.js';
 
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -22,7 +23,7 @@ const store = emulator || configured
 const api = (path, opts) => store.api(path, opts);
 
 const STATUS_LABEL = { pending: 'بانتظار التأكيد', booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
-const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, notes: renderNotes };
+const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, services: renderServices, notes: renderNotes };
 
 // ---------- helpers ----------
 const fmtDate = (s, opts) => parseYmd(s).toLocaleDateString('ar-u-nu-latn', opts || { weekday: 'long', day: 'numeric', month: 'long' });
@@ -333,6 +334,113 @@ async function renderClients() {
   });
 }
 
+async function renderServices() {
+  const [services, info] = await Promise.all([api('/services'), api('/settings')]);
+  const infoFields = [
+    ['about', 'نبذة عن الصالون', 'textarea'], ['address', 'العنوان', 'input'], ['maps_url', 'رابط الموقع على الخريطة', 'input'],
+    ['hours_text', 'ساعات الدوام (نص يظهر للزبائن)', 'input'], ['payment', 'طرق الدفع', 'input'], ['policies', 'سياسة الإلغاء والمواعيد', 'textarea'],
+  ];
+  view.innerHTML = `
+    ${hero({ title: 'الخدمات والأسعار', sub: 'مساعد واتساب بيجاوب الزبائن من هالمعلومات بالضبط', tone: 'c',
+      actions: '<button class="btn" id="addService" type="button">＋ خدمة جديدة</button>' })}
+    <div class="section-title"><h3>الخدمات</h3></div>
+    <div class="list">
+      ${services.length ? services.map((s) => `
+        <article class="card client" data-svc="${s.id}" style="cursor:default">
+          <div>
+            <div class="appt-name">${esc(s.name)} ${s.active ? '' : '<span class="chip chip-cancelled">مخفية</span>'}</div>
+            <div class="appt-meta"><span><b>${s.price == null ? 'حسب الاتفاق' : money(s.price)}</b></span>${s.note ? `<span>${esc(s.note)}</span>` : ''}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-sm" data-s="edit">تعديل</button>
+            <button class="btn btn-sm" data-s="toggle">${s.active ? 'إخفاء' : 'إظهار'}</button>
+            <button class="btn btn-danger btn-sm" data-s="del">حذف</button>
+          </div>
+        </article>`).join('') : emptyState('ما في خدمات بعد — أضيفي أول خدمة')}
+    </div>
+
+    <div class="section-title"><h3>معلومات الصالون</h3></div>
+    <form class="card" id="infoForm">
+      ${infoFields.map(([k, label, kind]) => `<label class="field"><span>${label}</span>${kind === 'textarea'
+        ? `<textarea name="${k}" maxlength="800">${esc(info[k])}</textarea>` : `<input name="${k}" maxlength="300" value="${esc(info[k])}">`}</label>`).join('')}
+      <div class="modal-actions"><button class="btn btn-primary" type="submit">حفظ المعلومات</button></div>
+    </form>
+
+    <div class="section-title"><h3>أسئلة شائعة</h3><button class="btn btn-sm" id="addFaq" type="button">＋ سؤال</button></div>
+    <div class="list">
+      ${info.faq.length ? info.faq.map((f, i) => `
+        <article class="card client" data-faq="${i}" style="cursor:default">
+          <div><div class="appt-name">${esc(f.q)}</div><div class="appt-meta"><span>${esc(f.a)}</span></div></div>
+          <div class="actions"><button class="btn btn-sm" data-f="edit">تعديل</button><button class="btn btn-danger btn-sm" data-f="del">حذف</button></div>
+        </article>`).join('') : '<p class="muted">مثال: «بتقبلوا كارت؟» ← «لا، كاش فقط». المساعد بيستعملها لما الزبونة تسأل.</p>'}
+    </div>`;
+
+  const serviceForm = (s = {}) => openModal(`
+    <form id="svcForm">
+      <h3>${s.id ? 'تعديل الخدمة' : 'خدمة جديدة'}</h3>
+      <label class="field"><span>اسم الخدمة *</span><input name="name" value="${esc(s.name)}" required maxlength="80"></label>
+      <label class="field"><span>السعر (${esc(state.currency)}) — اتركيه فاضي إذا بيتحدد بالصالون</span><input type="number" inputmode="decimal" name="price" min="0" step="0.01" value="${s.price ?? ''}"></label>
+      <label class="field"><span>ملاحظة تظهر للزبونة (مثلاً: السعر يزيد للشعر الطويل)</span><input name="note" maxlength="300" value="${esc(s.note)}"></label>
+      <p class="error" id="formError" role="alert"></p>
+      <div class="modal-actions"><button class="btn" type="button" data-close>إلغاء</button><button class="btn btn-primary" type="submit">حفظ</button></div>
+    </form>`, (card) => {
+    card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
+    $('#svcForm', card).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      try { await api(s.id ? `/services/${s.id}` : '/services', { method: s.id ? 'PATCH' : 'POST', body }); closeModal(); reload(); }
+      catch (err) { $('#formError').textContent = err.message; }
+    });
+  });
+
+  const faqForm = (i = null) => {
+    const f = i == null ? { q: '', a: '' } : info.faq[i];
+    openModal(`
+      <form id="faqForm">
+        <h3>${i == null ? 'سؤال شائع' : 'تعديل السؤال'}</h3>
+        <label class="field"><span>السؤال *</span><input name="q" value="${esc(f.q)}" required maxlength="200"></label>
+        <label class="field"><span>الجواب *</span><textarea name="a" required maxlength="600">${esc(f.a)}</textarea></label>
+        <div class="modal-actions"><button class="btn" type="button" data-close>إلغاء</button><button class="btn btn-primary" type="submit">حفظ</button></div>
+      </form>`, (card) => {
+      card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
+      $('#faqForm', card).addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const next = Object.fromEntries(new FormData(e.target));
+        const cur = await api('/settings');                       // always the latest, so saved info isn't overwritten
+        const faq = [...cur.faq];
+        if (i == null) faq.push(next); else faq[i] = next;
+        if (await attempt(() => api('/settings', { method: 'PUT', body: { ...cur, faq } }))) { closeModal(); reload(); }
+      });
+    });
+  };
+
+  $('#addService', view).addEventListener('click', () => serviceForm());
+  $('#addFaq', view).addEventListener('click', () => faqForm());
+  $('#infoForm', view).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cur = await api('/settings');
+    if (await attempt(() => api('/settings', { method: 'PUT', body: { ...cur, ...Object.fromEntries(new FormData(e.target)) } }))) toast('تم حفظ المعلومات ✓');
+  });
+  const onListClick = async (e) => {
+    const sBtn = e.target.closest('[data-s]');
+    const fBtn = e.target.closest('[data-f]');
+    if (sBtn) {
+      const s = services.find((x) => x.id === sBtn.closest('[data-svc]').dataset.svc);
+      if (sBtn.dataset.s === 'edit') serviceForm(s);
+      if (sBtn.dataset.s === 'toggle') { await attempt(() => api(`/services/${s.id}`, { method: 'PATCH', body: { active: !s.active } })); reload(); }
+      if (sBtn.dataset.s === 'del' && await ask(`حذف خدمة «${s.name}»؟`, { yes: 'حذف', danger: true })) { await attempt(() => api(`/services/${s.id}`, { method: 'DELETE' })); reload(); }
+    } else if (fBtn) {
+      const i = Number(fBtn.closest('[data-faq]').dataset.faq);
+      if (fBtn.dataset.f === 'edit') faqForm(i);
+      if (fBtn.dataset.f === 'del' && await ask('حذف هذا السؤال؟', { yes: 'حذف', danger: true })) {
+        const cur = await api('/settings');
+        await attempt(() => api('/settings', { method: 'PUT', body: { ...cur, faq: cur.faq.filter((_, k) => k !== i) } })); reload();
+      }
+    }
+  };
+  view.querySelectorAll('[data-svc], [data-faq]').forEach((el) => el.addEventListener('click', onListClick));  // per element: re-created on every render
+}
+
 async function renderNotes() {
   const notes = await api('/notes');
   view.innerHTML = `
@@ -385,8 +493,9 @@ async function downloadBackup() {
 }
 
 // ---------- modals ----------
-function openAppointmentForm(a = null, defaults = {}) {
+async function openAppointmentForm(a = null, defaults = {}) {
   const isEdit = !!a;
+  const svc = (await api('/services').catch(() => [])).filter((s) => s.active);
   const v = a || { client_name: '', phone: '', date: state.date, time: '10:00', service: '', price: '', note: '', status: 'booked', ...defaults };
   openModal(`
     <form id="apptForm">
@@ -398,7 +507,7 @@ function openAppointmentForm(a = null, defaults = {}) {
         <label class="field"><span>الساعة *</span><input type="time" name="time" value="${esc(v.time)}" required></label>
       </div>
       <div class="slots" id="slots" aria-label="ساعات سريعة"></div>
-      <label class="field"><span>الخدمة</span><input name="service" value="${esc(v.service)}" maxlength="120" placeholder="قص، صبغة، تسريحة…"></label>
+      <label class="field"><span>الخدمة</span><input name="service" value="${esc(v.service)}" maxlength="120" placeholder="قص، صبغة، تسريحة…" list="svcList" autocomplete="off"><datalist id="svcList">${svc.map((s) => `<option value="${esc(s.name)}"></option>`).join('')}</datalist></label>
       <div class="row">
         <label class="field"><span>السعر (${esc(state.currency)})</span><input type="number" inputmode="decimal" name="price" min="0" step="0.01" value="${esc(v.price)}"></label>
         ${isEdit
@@ -441,6 +550,12 @@ function openAppointmentForm(a = null, defaults = {}) {
     form.time.addEventListener('input', paintSlots);
     paintSlots();
     loadTaken();
+
+    // picking a listed service fills in its price (never overwrites one you typed)
+    form.service.addEventListener('change', () => {
+      const hit = svc.find((s) => s.name === form.service.value.trim());
+      if (hit && hit.price != null && !form.price.value) form.price.value = hit.price;
+    });
 
     // typing a known phone number fills in the name
     form.phone.addEventListener('change', async () => {
@@ -616,6 +731,13 @@ $('#wakeBtn').addEventListener('click', () => {
   else { wakeLock?.release(); toast('عاد انطفاء الشاشة التلقائي'); }
   paintUtils();
 });
+function qrSvg(text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+}
+
 // WhatsApp assistant status (the bot writes a heartbeat; the button stays hidden if no bot was ever set up)
 const BOT_TEXT = {
   connected: 'متصل ويرد على الزبائن ✅', connecting: 'عم يتصل…', qr: 'بانتظار ربط الرقم (QR بشاشة جهاز البوت)',
@@ -642,6 +764,7 @@ $('#botBtn').addEventListener('click', () => {
     <h3>مساعد واتساب</h3>
     <p><b>${fresh ? BOT_TEXT[s.state] || esc(s.state) : 'غير متصل — جهاز البوت مطفي أو بلا إنترنت ⚠️'}</b></p>
     ${s.number ? `<p class="muted">الرقم: <span dir="ltr">+${esc(s.number)}</span></p>` : ''}
+    ${s.qr ? `<p>على موبايل الصالون: واتساب ← الأجهزة المرتبطة ← <b>ربط جهاز</b> ← امسحي هالرمز:</p><div class="qr-box">${qrSvg(s.qr)}</div>` : ''}
     ${s.pairingCode ? `<p>على الموبايل: واتساب ← الأجهزة المرتبطة ← ربط جهاز ← <b>الربط برقم الهاتف</b> وأدخلي:</p><div class="pair-code">${esc(s.pairingCode)}</div>` : ''}
     <p class="muted">آخر إشارة: ${esc(fmtStamp(s.updatedAt))}</p>
     <div class="modal-actions"><button class="btn" type="button" data-close>إغلاق</button></div>`,

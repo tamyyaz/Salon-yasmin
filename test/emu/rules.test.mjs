@@ -66,6 +66,24 @@ test('bot-created requests: pending status and the optional source/wa_notified f
   await assertFails(setDoc(doc(db, 'appointments/w3'), appt({ wa_notified: 5 })));
 });
 
+test('services and salon settings: validated, salon-only, single settings doc', async () => {
+  const db = salon();
+  const svc = (o = {}) => ({ name: 'قص شعر', price: 25, note: '', active: true, ...o });
+  await assertSucceeds(setDoc(doc(db, 'services/s1'), svc()));
+  await assertSucceeds(setDoc(doc(db, 'services/s2'), svc({ price: null })));
+  await assertFails(setDoc(doc(db, 'services/s3'), svc({ name: '' })));
+  await assertFails(setDoc(doc(db, 'services/s3'), svc({ price: -4 })));
+  await assertFails(setDoc(doc(db, 'services/s3'), svc({ active: 'yes' })));
+  await assertFails(setDoc(doc(db, 'services/s3'), { ...svc(), extra: 1 }));
+  await assertFails(setDoc(doc(stranger(), 'services/s4'), svc()));
+  await assertFails(getDoc(doc(anon(), 'services/s1')));
+  const info = { about: '', address: 'المزة', maps_url: '', hours_text: '', payment: '', policies: '', faq: [{ q: 'q', a: 'a' }] };
+  await assertSucceeds(setDoc(doc(db, 'settings/salon'), info));
+  await assertFails(setDoc(doc(db, 'settings/other'), info));
+  await assertFails(setDoc(doc(db, 'settings/salon'), { ...info, faq: 'x' }));
+  await assertFails(setDoc(doc(stranger(), 'settings/salon'), info));
+});
+
 test('bot_status is readable by the salon only and never writable from the app', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'bot_status/main'), { state: 'connected', updatedAt: 'now' }));
   await assertSucceeds(getDoc(doc(salon(), 'bot_status/main')));

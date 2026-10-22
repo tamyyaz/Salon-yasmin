@@ -16,7 +16,12 @@ export async function deployRest(keyFile) {
     catch (e) { const err = new Error(`${method} ${url.replace(/\?.*/, '')} → ${e.response?.status} ${e.response?.data?.error?.message || e.message}`); err.status = e.response?.status; throw err; }
   };
 
-  // ---- Firestore rules ----
+  // ---- Firestore rules (only when they changed: every release takes a while to reach all servers) ----
+  const wanted = fs.readFileSync('firestore.rules', 'utf8');
+  const current = await call(`https://firebaserules.googleapis.com/v1/projects/${P}/releases/cloud.firestore`)
+    .then((r) => call(`https://firebaserules.googleapis.com/v1/${r.rulesetName}`)).then((r) => r.source?.files?.[0]?.content).catch(() => null);
+  if (current === wanted) console.log('  rules: unchanged, skipped');
+  else {
   console.log('  rules: uploading firestore.rules');
   const ruleset = await call(`https://firebaserules.googleapis.com/v1/projects/${P}/rulesets`, 'POST',
     { source: { files: [{ name: 'firestore.rules', content: fs.readFileSync('firestore.rules', 'utf8') }] } });
@@ -28,6 +33,7 @@ export async function deployRest(keyFile) {
     await call(`https://firebaserules.googleapis.com/v1/projects/${P}/releases`, 'POST', release);
   }
   console.log('  rules: released');
+  }
 
   // ---- Hosting ----
   const site = P;

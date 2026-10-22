@@ -48,6 +48,36 @@ service cloud.firestore {
       allow read: if isSalon();
     }
 
+    function validService(d) {
+      return d.keys().hasOnly(['name', 'price', 'note', 'active'])
+        && d.keys().hasAll(['name', 'price', 'note', 'active'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && (d.price == null || (d.price is number && d.price >= 0 && d.price <= 10000000))
+        && d.note is string && d.note.size() <= 300
+        && d.active is bool;
+    }
+
+    function validSettings(d) {
+      return d.keys().hasOnly(['about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+        && d.about is string && d.about.size() <= 600
+        && d.address is string && d.address.size() <= 300
+        && d.maps_url is string && d.maps_url.size() <= 300
+        && d.hours_text is string && d.hours_text.size() <= 300
+        && d.payment is string && d.payment.size() <= 300
+        && d.policies is string && d.policies.size() <= 800
+        && d.faq is list && d.faq.size() <= 30;
+    }
+
+    // what the assistant knows about the salon: prices, info, FAQ
+    match /services/{id} {
+      allow read, delete: if isSalon();
+      allow create, update: if isSalon() && validService(request.resource.data);
+    }
+    match /settings/{id} {
+      allow read: if isSalon();
+      allow create, update: if isSalon() && id == 'salon' && validSettings(request.resource.data);
+    }
+
     match /notes/{id} {
       allow read, delete: if isSalon();
       allow create, update: if isSalon() && validNote(request.resource.data);

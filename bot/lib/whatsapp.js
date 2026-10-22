@@ -74,7 +74,7 @@ export function createWhatsApp({
           pairingAsked = true;
           try { onStatus({ state: 'pairing', pairingCode: await sock.requestPairingCode(digitsOf(pairNumber)) }); }
           catch (e) { log('pairing-failed', e); pairingAsked = false; }
-        } else if (!pairNumber) { printQr(u.qr); onStatus({ state: 'qr' }); }
+        } else if (!pairNumber) { printQr(u.qr); onStatus({ state: 'qr', qr: u.qr }); }
       }
       if (u.connection === 'open') { attempt = 0; pairingAsked = false; onStatus({ state: 'connected', number: digitsOf(sock.user?.id || '') }); }
       if (u.connection === 'close') {

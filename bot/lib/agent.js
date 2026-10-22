@@ -3,6 +3,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { BookingError, phoneOfChat } from './booking.js';
 import { WEEKDAYS_AR } from './time.js';
+import { createKnowledge, knowledgeText } from './knowledge.js';
 
 const HISTORY_TURNS = 16;
 const MAX_TOOL_ROUNDS = 6;
@@ -28,17 +29,19 @@ export const TOOLS = [
     parameters: { type: 'OBJECT', properties: { reason: { type: 'STRING' } }, required: ['reason'] } },
 ];
 
-export function systemPrompt(config, clock) {
-  const services = config.services.map((s) => `- ${s.name}${s.price != null ? `: ${s.price} ${config.currency}` : ' (السعر بيتحدد بالصالون)'}`).join('\n');
+export function systemPrompt(config, clock, kb) {
   const closed = config.closedWeekdays.length ? config.closedWeekdays.map((d) => WEEKDAYS_AR[d]).join('، ') : 'ما في';
   return `إنتي مساعدة واتساب لـ "${config.name}" (صالون تجميل نسائي). بتحكي باللهجة الشامية البسيطة، بجمل قصيرة ولطيفة، وبدون مبالغة بالإيموجي.
 الآن: ${WEEKDAYS_AR[clock.weekday]} ${clock.date} الساعة ${clock.time} (بتوقيت الصالون).
-دوام الصالون من ${config.openHour}:00 لـ ${config.closeHour}:00. أيام العطلة: ${closed}. الخدمات:
-${services}
+دوام الصالون من ${config.openHour}:00 لـ ${config.closeHour}:00. أيام العطلة: ${closed}.
 
-شغلك: تساعدي الزبونة تحجز موعد، تعرفي حجوزاتها، أو تلغيها، وتجاوبي على أسئلة الدوام والخدمات المذكورة فوق.
+${knowledgeText(kb, config)}
+
+شغلك: تساعدي الزبونة تحجز موعد، تعرفي حجوزاتها، أو تلغيها، وتجاوبي على أي سؤال عن الصالون (الأسعار، الخدمات، العنوان، الدوام، الدفع، السياسات، الأسئلة الشائعة) من المعلومات المكتوبة فوق فقط.
 قواعد ثابتة:
-- ما تخترعي أوقات أو أسعار أو خدمات. الأوقات من check_availability فقط، والأسعار من القائمة فقط.
+- ما تخترعي أوقات أو أسعار أو خدمات أو معلومات. الأوقات من check_availability فقط، وكل شي تاني من المعلومات المكتوبة فوق فقط.
+- لما حدا يسأل عن سعر: اذكري السعر والملاحظة المكتوبة. إذا السعر "بيتحدد بالصالون" قولي هيك بلطف واعرضي تحجزلها موعد.
+- إذا المعلومة مش مكتوبة فوق، لا تخمني: قولي إنك رح تسألي الصالون واستعملي handoff_to_human.
 - لحجز موعد لازم: الاسم، الخدمة، اليوم، الوقت. اسألي عن الناقص بسؤال واحد قصير. حوّلي "بكرا/السبت/بعد يومين" لتاريخ حقيقي حسب تاريخ اليوم.
 - قبل create_booking اعرضي ملخص (الاسم، الخدمة، اليوم والتاريخ، الساعة) وانتظري موافقتها الصريحة.
 - بعد الحجز قولي بوضوح إنو الموعد "بانتظار تأكيد الصالون" وإنو رح توصلها رسالة لما يتأكد.
@@ -49,7 +52,7 @@ ${services}
 const toContents = (history) => history.map((h) => ({ role: h.role, parts: [{ text: h.text }] }));
 const isAlreadyExists = (e) => e?.code === 6 || /ALREADY_EXISTS/.test(String(e?.message));
 
-export function createAgent({ db, gemini, config, booking, now = () => new Date(), log = () => {} }) {
+export function createAgent({ db, gemini, config, booking, knowledge = createKnowledge({ db, config }), now = () => new Date(), log = () => {} }) {
   const chats = db.collection('wa_chats');
 
   async function handle({ chatId, text, messageId, fromMe = false }) {
@@ -103,8 +106,9 @@ export function createAgent({ db, gemini, config, booking, now = () => new Date(
 
     let reply = '';
     try {
+      const kb = await knowledge.load();
       for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-        const content = await gemini.generate({ system: systemPrompt(config, booking.clock()), contents, tools: TOOLS });
+        const content = await gemini.generate({ system: systemPrompt(config, booking.clock(), kb), contents, tools: TOOLS });
         const calls = content.parts.filter((p) => p.functionCall);
         if (!calls.length) { reply = content.parts.map((p) => p.text || '').join('').trim(); break; }
         contents.push(content);                                          // keep parts untouched (thought signatures)

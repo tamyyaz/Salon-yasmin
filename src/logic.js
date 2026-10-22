@@ -60,6 +60,32 @@ export function parseAppointment(body, { partial = false } = {}) {
   return out;
 }
 
+// ---------- services, salon info & FAQ (the WhatsApp assistant answers from these) ----------
+export function parseService(body, { partial = false } = {}) {
+  const out = {};
+  const has = (k) => body[k] !== undefined;
+  if (!partial || has('name')) {
+    out.name = str(body.name, 80);
+    if (!out.name) throw bad('اسم الخدمة مطلوب');
+  }
+  if (!partial || has('price')) out.price = body.price === '' || body.price == null ? null : money(body.price, 'السعر');
+  if (!partial || has('note')) out.note = str(body.note, 300);
+  if (!partial || has('active')) out.active = body.active === undefined ? true : !!body.active;
+  return out;
+}
+
+export function parseSettings(body) {
+  const field = (k, max) => str(body[k], max);
+  const faq = (Array.isArray(body.faq) ? body.faq : []).slice(0, 30)
+    .map((f) => ({ q: str(f?.q, 200), a: str(f?.a, 600) })).filter((f) => f.q && f.a);
+  return {
+    about: field('about', 600), address: field('address', 300), maps_url: field('maps_url', 300),
+    hours_text: field('hours_text', 300), payment: field('payment', 300), policies: field('policies', 800), faq,
+  };
+}
+
+export const sortServices = (list) => [...list].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
 // ---------- balances ----------
 export const paidOf = (a) => round2((a.payments || []).reduce((s, p) => s + p.amount, 0));
 export const dueOf = (a) => (OWING.includes(a.status) ? Math.max(0, round2(a.price - paidOf(a))) : 0);

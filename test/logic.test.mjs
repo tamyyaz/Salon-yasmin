@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isDate, isTime, parseAppointment, ValidationError, dueOf, withBalance, filterAppointments, groupClients,
-  clientHistory, dayStats, sortNotes, addDays, ymd,
+  clientHistory, dayStats, sortNotes, addDays, ymd, parseService, parseSettings, sortServices,
 } from '../src/logic.js';
 
 const appt = (o = {}) => ({ id: Math.random().toString(36).slice(2), client_name: 'ليلى', phone: '0791234567', date: '2026-03-01', time: '10:00',
@@ -98,4 +98,17 @@ test('date helpers', () => {
   assert.equal(addDays('2026-02-28', 1), '2026-03-01');
   assert.equal(addDays('2026-01-01', -1), '2025-12-31');
   assert.equal(ymd(new Date(2026, 0, 5)), '2026-01-05');
+});
+
+test('services and salon info are validated and trimmed', () => {
+  assert.deepEqual(parseService({ name: ' قص شعر ', price: '25.5', note: 'للشعر الطويل +5', active: true }), { name: 'قص شعر', price: 25.5, note: 'للشعر الطويل +5', active: true });
+  assert.equal(parseService({ name: 'صبغة', price: '' }).price, null);                 // price agreed at the salon
+  assert.equal(parseService({ name: 'x' }).active, true);
+  assert.throws(() => parseService({ name: ' ' }), ValidationError);
+  assert.throws(() => parseService({ name: 'x', price: -1 }), ValidationError);
+  assert.deepEqual(parseService({ active: false }, { partial: true }), { active: false });
+  const st = parseSettings({ about: ' صالون ', faq: [{ q: 'وين؟', a: 'بالمزة' }, { q: '', a: 'x' }, { q: 'y', a: '' }], hours_text: 'يومياً 9-9' });
+  assert.deepEqual([st.about, st.hours_text, st.faq.length, st.address], ['صالون', 'يومياً 9-9', 1, '']);
+  assert.equal(parseSettings({ faq: Array.from({ length: 50 }, () => ({ q: 'q', a: 'a' })) }).faq.length, 30);
+  assert.deepEqual(sortServices([{ name: 'ب' }, { name: 'أ' }]).map((x) => x.name), ['أ', 'ب']);
 });

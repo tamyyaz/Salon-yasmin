@@ -11,7 +11,7 @@ export class BookingError extends Error {}
 export const phoneOfChat = (chatId) => `+${String(chatId).replace(/@.*$/, '').replace(/\D/g, '')}`;
 export const chatOfPhone = (phone) => `${String(phone).replace(/\D/g, '')}@c.us`;
 
-export function createBooking({ db, config, now = () => new Date() }) {
+export function createBooking({ db, config, now = () => new Date(), getServices = async () => config.services }) {
   const appts = db.collection('appointments');
   const clock = () => localNow(config.timezone, now());
 
@@ -71,7 +71,7 @@ export function createBooking({ db, config, now = () => new Date() }) {
     if ((await activeFor(phone)).length >= config.maxActivePerCustomer) {
       throw new BookingError(`عندك ${config.maxActivePerCustomer} حجوزات مفتوحة، لازم تلغي واحد أو تستنى لحد ما تمر`);
     }
-    const known = config.services.find((s) => s.name === service);
+    const known = (await getServices()).find((s) => s.name === service);
     const ref = appts.doc();
     // a transaction re-checks the slot, so two customers can't take the same time
     await db.runTransaction(async (tx) => {

@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import {
   STATUSES, parseAppointment, money, str, normPhone, dueOf, withBalance, filterAppointments, groupClients,
-  clientHistory, dayStats, sortNotes, ymd, addDays, isDate,
+  clientHistory, dayStats, sortNotes, ymd, addDays, isDate, parseService, parseSettings, sortServices,
 } from './logic.js';
 
 const nowISO = () => new Date().toISOString();
@@ -60,6 +60,8 @@ export function createStore({
   const inRecent = new Set();
   const inUnpaid = new Set();
   const notes = new Map();
+  const services = new Map();
+  let settings = null;
   let botStatus = null;            // heartbeat written by the WhatsApp bot, if one is running
   const listeners = new Set();
   const errorHandlers = new Set();
@@ -109,16 +111,31 @@ export function createStore({
   async function start() {
     stop();
     windowStart = addDays(today(), -recentDays);
+    // A listener that is refused (e.g. security rules still rolling out after a deploy, or a token refresh
+    // in flight) is retried with growing delays before it is reported as a real failure.
     const listen = (label, q, onChange) => new Promise((resolve) => {
       let first = true;
+      let stopped = false;
+      let off = () => {};
+      let tries = 0;
       const settle = () => { if (first) { first = false; resolve(); } };
-      unsubs.push(onSnapshot(q, (snap) => { onChange(snap); notify(); settle(); }, (err) => { console.warn(`[firestore listener failed: ${label}]`, err.code, err.message); reportError(err); settle(); }));
+      const attach = () => {
+        off = onSnapshot(q, (snap) => { tries = 0; onChange(snap); notify(); settle(); }, (err) => {
+          console.warn(`[firestore listener failed: ${label}]`, err.code, err.message);
+          settle();
+          if (!stopped && tries < 5) { tries += 1; setTimeout(() => { if (!stopped) attach(); }, Math.min(30000, 3000 * 2 ** (tries - 1))); } else reportError(err);
+        });
+      };
+      unsubs.push(() => { stopped = true; off(); });
+      attach();
     });
     // resolve once the first data (cache or server) has arrived; never block the UI for long
     await withTimeout(Promise.all([
       listen('recent appointments', query(apptCol, where('date', '>=', windowStart)), (s) => applyAppointments(s, inRecent)),
       listen('unpaid appointments', query(apptCol, where('due', '>', 0)), (s) => applyAppointments(s, inUnpaid)),
       listen('notes', notesCol, applyNotes),
+      listen('services', collection(db, 'services'), (s) => { services.clear(); s.docs.forEach((d) => services.set(d.id, { id: d.id, ...d.data() })); }),
+      listen('salon settings', doc(db, 'settings', 'salon'), (s) => { settings = s.exists() ? s.data() : null; }),
       listen('bot status', doc(db, 'bot_status', 'main'), (snap) => { botStatus = snap.exists() ? snap.data() : null; }),
     ]), 8000).catch(() => {});
   }
@@ -126,7 +143,7 @@ export function createStore({
   function stop() {
     unsubs.forEach((fn) => fn());
     unsubs = [];
-    docs.clear(); inRecent.clear(); inUnpaid.clear(); notes.clear();
+    docs.clear(); inRecent.clear(); inUnpaid.clear(); notes.clear(); services.clear(); settings = null;
   }
 
   // ---------- on-demand fetches ----------
@@ -257,6 +274,40 @@ export function createStore({
     return { ok: true };
   }
 
+  // ---------- services & salon info ----------
+  function createService(body) {
+    const data = parseService(body);
+    const ref = doc(collection(db, 'services'));
+    services.set(ref.id, { id: ref.id, ...data });
+    notify();
+    setDoc(ref, data).catch(reportError);
+    return { id: ref.id, ...data };
+  }
+
+  function patchService(id, body) {
+    const cur = services.get(id);
+    if (!cur) throw new Error('الخدمة غير موجودة');
+    const changes = parseService(body, { partial: true });
+    services.set(id, { ...cur, ...changes });
+    notify();
+    updateDoc(doc(db, 'services', id), changes).catch(reportError);
+    return { ok: true };
+  }
+
+  function removeService(id) {
+    services.delete(id);
+    notify();
+    deleteDoc(doc(db, 'services', id)).catch(reportError);
+    return { ok: true };
+  }
+
+  function saveSettings(body) {
+    settings = parseSettings(body);
+    notify();
+    setDoc(doc(db, 'settings', 'salon'), settings).catch(reportError);
+    return settings;
+  }
+
   // ---------- REST-shaped router ----------
   async function api(path, { method = 'GET', body = {} } = {}) {
     const [p, qs = ''] = path.split('?');
@@ -280,6 +331,15 @@ export function createStore({
       return history(q);
     } else if (p === '/stats' && method === 'GET') {
       return stats(q);
+    } else if (p === '/services') {
+      if (method === 'GET') return sortServices([...services.values()]);
+      if (method === 'POST') return createService(body);
+    } else if ((m = p.match(/^\/services\/([^/]+)$/))) {
+      if (method === 'PATCH') return patchService(m[1], body);
+      if (method === 'DELETE') return removeService(m[1]);
+    } else if (p === '/settings') {
+      if (method === 'GET') return settings || parseSettings({});
+      if (method === 'PUT') return saveSettings(body);
     } else if (p === '/notes') {
       if (method === 'GET') return sortNotes([...notes.values()]);
       if (method === 'POST') return createNote(body);
@@ -312,11 +372,13 @@ export function createStore({
   }
 
   async function exportAll() {
-    const [a, n] = await Promise.all([getDocs(apptCol), getDocs(notesCol)]);
+    const [a, n, sv, st] = await Promise.all([getDocs(apptCol), getDocs(notesCol), getDocs(collection(db, 'services')), getDoc(doc(db, 'settings', 'salon'))]);
     return {
       exported_at: nowISO(),
       appointments: a.docs.map((d) => ({ id: d.id, ...d.data() })),
       notes: n.docs.map((d) => ({ id: d.id, ...d.data() })),
+      services: sv.docs.map((d) => ({ id: d.id, ...d.data() })),
+      settings: st.exists() ? st.data() : null,
     };
   }
 

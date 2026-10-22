@@ -10,6 +10,7 @@ import config from './salon.config.js';
 import { openDb } from './lib/db.js';
 import { createGemini } from './lib/gemini.js';
 import { createBooking } from './lib/booking.js';
+import { createKnowledge } from './lib/knowledge.js';
 import { createAgent } from './lib/agent.js';
 import { watchConfirmations } from './lib/notify.js';
 import { createWhatsApp } from './lib/whatsapp.js';
@@ -28,8 +29,9 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.FIREBASE_SERVICE
 
 const db = openDb({ projectId: web.firebase.projectId });
 const gemini = createGemini({ apiKey: process.env.GEMINI_API_KEY });
-const booking = createBooking({ db, config });
-const agent = createAgent({ db, gemini, config, booking, log });
+const knowledge = createKnowledge({ db, config });
+const booking = createBooking({ db, config, getServices: async () => (await knowledge.load()).services });
+const agent = createAgent({ db, gemini, config, booking, knowledge, log });
 const statusRef = db.collection('bot_status').doc('main');
 const startedAt = new Date().toISOString();
 let status = { state: 'connecting' };
@@ -37,7 +39,7 @@ let status = { state: 'connecting' };
 // the app shows this: green when fresh and connected, so the owner knows if the bot silently dropped
 const publish = (patch = {}) => {
   status = { ...status, ...patch };
-  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini.model };
+  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini.model };
   return statusRef.set(doc).catch((e) => log('status-write-failed', e.message));
 };
 
@@ -50,7 +52,7 @@ const wa = createWhatsApp({
   log,
   onStatus: (s) => {
     log('whatsapp:', s.state, s.pairingCode ? `— كود الربط: ${s.pairingCode}` : '');
-    publish({ pairingCode: null, ...s });
+    publish({ pairingCode: null, qr: null, ...s });
   },
   onMessage: async (m) => {
     if (m.fromMe) { await agent.handle({ chatId: m.chatId, fromMe: true, messageId: m.messageId }); return; }

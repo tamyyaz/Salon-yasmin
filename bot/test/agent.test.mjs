@@ -21,11 +21,11 @@ const booking = createBooking({ db, config, now });
 const say = (text) => ({ role: 'model', parts: [{ text }] });
 const call = (name, args) => ({ role: 'model', parts: [{ functionCall: { name, args } }] });
 function fakeGemini(script) {
-  const seen = [];
+  const seen = []; const systems = [];
   return {
-    seen,
-    async generate({ contents }) {
-      seen.push(structuredClone(contents));
+    seen, systems,
+    async generate({ contents, system }) {
+      seen.push(structuredClone(contents)); systems.push(system);
       const step = script.shift();
       if (!step) throw new Error('script exhausted');
       if (step instanceof Error) throw step;
@@ -143,6 +143,33 @@ test('a model failure never leaks details: friendly text + note for the salon', 
   assert.ok(!/secret|Gemini/.test(reply));
   assert.match(reply, /الصالون/);
   assert.equal((await db.collection('notes').get()).size, 1);
+});
+
+test('answers come from what the owner wrote in the app: prices, info, FAQ — and stay current', async () => {
+  await db.collection('services').add({ name: 'صبغة', price: 80, note: 'السعر يزيد للشعر الطويل', active: true });
+  await db.collection('services').add({ name: 'سيشوار', price: null, note: '', active: true });
+  await db.collection('services').add({ name: 'خدمة مخفية', price: 5, note: '', active: false });
+  await db.doc('settings/salon').set({ about: 'صالون نسائي', address: 'دمشق، المزة', maps_url: 'https://maps.app.goo.gl/xyz', hours_text: 'يومياً 9 صباحاً حتى 9 مساءً',
+    payment: 'كاش فقط', policies: 'الإلغاء قبل 24 ساعة', faq: [{ q: 'بتقبلوا كارت؟', a: 'لا، كاش فقط' }] });
+  const { agent, gemini } = agentWith([say('الصبغة 80')]);
+  await agent.handle({ chatId: LAYLA, text: 'قديش الصبغة؟', messageId: 'k1' });
+  const p = gemini.systems[0];
+  for (const must of ['صبغة: 80 ₪ (السعر يزيد للشعر الطويل)', 'سيشوار: السعر بيتحدد بالصالون', 'دمشق، المزة', 'https://maps.app.goo.gl/xyz', 'كاش فقط', 'الإلغاء قبل 24 ساعة', 'س: بتقبلوا كارت؟', 'ج: لا، كاش فقط']) {
+    assert.ok(p.includes(must), `prompt should contain: ${must}`);
+  }
+  assert.ok(!p.includes('خدمة مخفية'));                                        // hidden services are not offered
+  assert.ok(!p.includes('قص شعر'));                                             // the file's sample list is replaced once the app has services
+  assert.match(p, /لا تخمني/);                                                  // unknown → ask the salon, don't guess
+});
+
+test('a booking takes its price from the service list the owner maintains', async () => {
+  await db.collection('services').add({ name: 'صبغة', price: 80, note: '', active: true });
+  const kb = (await import('../lib/knowledge.js')).createKnowledge({ db, config, ttlMs: 0 });
+  const priced = createBooking({ db, config, now, getServices: async () => (await kb.load()).services });
+  await priced.create({ phone: phoneOfChat(LAYLA), customer_name: 'ليلى', date: '2026-10-24', time: '11:00', service: 'صبغة' });
+  await priced.create({ phone: phoneOfChat(LAYLA), customer_name: 'ليلى', date: '2026-10-24', time: '12:00', service: 'شي مش بالقائمة' });
+  const prices = Object.fromEntries((await appts()).map((a) => [a.service, a.price]));
+  assert.deepEqual(prices, { 'صبغة': 80, 'شي مش بالقائمة': 0 });
 });
 
 test('confirmation / decline messages are sent once per change', async () => {

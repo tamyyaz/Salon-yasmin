@@ -140,6 +140,24 @@ test('notes: create, pin, complete, delete; export contains everything', async (
   assert.equal((await s.api('/notes')).some((x) => x.id === id), false);
 });
 
+test('services and salon info round-trip through Firestore to another device', async () => {
+  const a = await track();
+  const b = await track();
+  const { id } = await a.api('/services', { method: 'POST', body: { name: 'صبغة', price: '60', note: 'حسب الطول' } });
+  await a.api('/services', { method: 'POST', body: { name: 'سيشوار', price: '' } });
+  await a.api(`/services/${id}`, { method: 'PATCH', body: { price: 70 } });
+  await assert.rejects(a.api('/services', { method: 'POST', body: { name: ' ' } }), /اسم الخدمة/);
+  const seen = await until(async () => { const l = await b.api('/services'); return l.length === 2 && l.find((x) => x.id === id)?.price === 70 && l; });
+  assert.deepEqual(seen.map((x) => x.name), ['سيشوار', 'صبغة']);
+  assert.equal(seen[0].price, null);
+  await a.api('/settings', { method: 'PUT', body: { address: 'المزة', faq: [{ q: 'بتقبلوا كارت؟', a: 'لا، كاش فقط' }] } });
+  const info = await until(async () => { const s = await b.api('/settings'); return s.address === 'المزة' && s; });
+  assert.equal(info.faq[0].a, 'لا، كاش فقط');
+  await a.api(`/services/${id}`, { method: 'DELETE' });
+  await until(async () => (await b.api('/services')).length === 1);
+  assert.ok((await a.exportAll()).services.length >= 1);
+});
+
 test('unknown routes fail clearly', async () => {
   const s = await track();
   await assert.rejects(s.api('/nope'), /غير موجود/);
