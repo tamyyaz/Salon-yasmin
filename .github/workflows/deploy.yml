@@ -18,6 +18,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # security rules first, so the new pages never meet old rules (skipped when unchanged; needs the "Firebase Rules Admin" role)
+      - name: Firestore rules
+        continue-on-error: true
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/key.json"
+          node scripts/deploy-rest.mjs --key "$RUNNER_TEMP/key.json" --rules-only
+          rm -f "$RUNNER_TEMP/key.json"
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

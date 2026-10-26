@@ -8,10 +8,10 @@ import * as baileys from '@whiskeysockets/baileys';
 import { config as web } from '../src/config.js';
 import config from './salon.config.js';
 import { openDb } from './lib/db.js';
-import { createGemini } from './lib/gemini.js';
 import { createBooking } from './lib/booking.js';
 import { createKnowledge } from './lib/knowledge.js';
 import { createAgent } from './lib/agent.js';
+import { createInbox, MEDIA_TEXT } from './lib/inbox.js';
 import { watchConfirmations } from './lib/notify.js';
 import { createWhatsApp } from './lib/whatsapp.js';
 
@@ -27,19 +27,18 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.FIREBASE_SERVICE
 }
 
 const db = openDb({ projectId: web.firebase.projectId });
-// The AI model is optional: without a key (or with AI_PROVIDER=none) the menu assistant answers on its own.
-const gemini = process.env.AI_PROVIDER !== 'none' && process.env.GEMINI_API_KEY ? createGemini({ apiKey: process.env.GEMINI_API_KEY }) : null;
 const knowledge = createKnowledge({ db, config });
 const booking = createBooking({ db, config, getServices: async () => (await knowledge.load()).services });
-const agent = createAgent({ db, gemini, config, booking, knowledge, log });
+const agent = createAgent({ db, config, booking, knowledge, log })
+const inbox = createInbox({ db, log });
 const statusRef = db.collection('bot_status').doc('main');
 const startedAt = new Date().toISOString();
-let status = { state: 'connecting', gemini: null };
+let status = { state: 'connecting' };
 
 // the app shows this: green when fresh and connected, so the owner knows if the bot silently dropped
 const publish = (patch = {}) => {
   status = { ...status, ...patch };
-  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString(), model: gemini?.model ?? 'menu', gemini: status.gemini ?? null };
+  const doc = { state: status.state, pairingCode: status.pairingCode ?? null, qr: status.state === 'qr' ? status.qr ?? null : null, number: status.number ?? null, startedAt, updatedAt: new Date().toISOString() };
   return statusRef.set(doc).catch((e) => log('status-write-failed', e.message));
 };
 
@@ -56,15 +55,34 @@ const wa = createWhatsApp({
   },
   onMessage: async (m) => {
     log(m.fromMe ? 'you typed to' : 'message from', m.chatId.slice(0, -5), m.hasMedia ? '(media)' : `(${m.text.length} chars)`);
-    if (m.fromMe) { await agent.handle({ chatId: m.chatId, fromMe: true, messageId: m.messageId }); return; }
+    const shown = m.text || MEDIA_TEXT;
+    if (m.fromMe) {                                                // typed on the phone itself
+      inbox.record({ chatId: m.chatId, dir: 'out', by: 'phone', text: shown, messageId: m.messageId });
+      await agent.handle({ chatId: m.chatId, fromMe: true, messageId: m.messageId });
+      return;
+    }
+    inbox.record({ chatId: m.chatId, dir: 'in', by: 'customer', text: shown, messageId: m.messageId, name: m.name });
     const t0 = Date.now();
     const reply = await agent.handle({ chatId: m.chatId, text: m.text, messageId: m.messageId });
     const tBrain = Date.now();
-    if (reply) { await wa.send(m.chatId, reply); log('replied to', m.chatId.slice(0, -5), `(thinking ${tBrain - t0}ms, sending ${Date.now() - tBrain}ms)`); }
+    if (reply) { await sendAsBot(m.chatId, reply); log('replied to', m.chatId.slice(0, -5), `(thinking ${tBrain - t0}ms, sending ${Date.now() - tBrain}ms)`); }
   },
 });
 
-const stopWatching = watchConfirmations({ db, log, send: (chatId, text) => wa.send(chatId, text) });
+// the assistant's own messages also show up in the Messages screen
+const sendAsBot = async (chatId, text) => {
+  const sent = await wa.send(chatId, text);
+  inbox.record({ chatId, dir: 'out', by: 'bot', text });
+  return sent;
+};
+// replies typed in the app can arrive while WhatsApp is still (re)connecting: give it a moment
+const sendWhenReady = async (chatId, text) => {
+  for (let i = 0; i < 60 && status.state !== 'connected'; i += 1) await new Promise((r) => setTimeout(r, 500));
+  return wa.send(chatId, text);
+};
+
+const stopWatching = watchConfirmations({ db, log, send: sendAsBot });
+const stopOutbox = inbox.watchOutbox({ send: sendWhenReady, onSent: (chatId) => agent.pauseFor(chatId) });
 const heartbeat = setInterval(() => publish(), 120000);
 
 // tidy up old de-duplication records once a day
@@ -76,8 +94,8 @@ cleanup().catch(() => {});
 const cleaner = setInterval(() => cleanup().catch(() => {}), 864e5);
 
 const shutdown = async () => {
-  clearInterval(heartbeat); clearInterval(cleaner); stopWatching(); wa.stop();
-  await agent.flush().catch(() => {});
+  clearInterval(heartbeat); clearInterval(cleaner); stopWatching(); stopOutbox(); wa.stop();
+  await Promise.all([agent.flush(), inbox.flush()]).catch(() => {});
   await publish({ state: 'offline', pairingCode: null }).catch(() => {});
   process.exit(0);
 };
@@ -88,22 +106,6 @@ process.on('SIGTERM', shutdown);
 await knowledge.start().catch((e) => log('knowledge-live-failed', e.message));
 await agent.warm().catch((e) => log('warm-failed', e.message));
 
-log(`${config.name} — المساعد يبدأ (${gemini ? gemini.model : 'بنمط القوائم، بدون ذكاء اصطناعي'})`);
+log(`${config.name} — المساعد يبدأ (الرسائل تظهر بالموقع، والرد الآلي بالقوائم يُتحكم فيه من شاشة «الرسائل»)`);
 await publish();
-
-// tell the owner right away how the assistant is answering (shown here and in the app)
-const MENU_ONLY = 'يعمل بنمط القوائم (أسعار، عنوان، دوام، أسئلة شائعة، حجز خطوة خطوة) بدون ذكاء اصطناعي';
-if (!gemini) {
-  log('الوضع: القوائم (بدون ذكاء اصطناعي)');
-  publish({ gemini: { ok: true, text: MENU_ONLY } });
-} else {
-  gemini.check().then((results) => {
-    for (const r of results) log(r.ok ? `Gemini ✅ ${r.model}` : `Gemini ⚠️ ${r.model}: ${r.status || 'no connection'} ${r.message}`);
-    const good = results.find((r) => r.ok);
-    const blocked = results.some((r) => /location is not supported/i.test(r.message));
-    if (!good) agent.setAiDown(30 * 60e3);                          // don't try the model on every message while it is unreachable
-    publish({ gemini: good
-      ? { ok: true, text: `الذكاء الاصطناعي يعمل (${good.model})${results.some((r) => !r.ok) ? ' — موديل آخر مشغول، رح يبدّل لحاله' : ''}` }
-      : { ok: false, text: `${blocked ? 'Gemini غير متاح من بلدك' : 'تعذّر الاتصال بـ Gemini'} — ${MENU_ONLY}` } });
-  }).catch((e) => log('Gemini check failed', e.message));
-}
+await wa.start();

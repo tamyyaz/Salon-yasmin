@@ -476,3 +476,59 @@ button, a, input, select, textarea, label { touch-action: manipulation; }
 
 .qr-box { width: min(300px, 80%); margin: .6rem auto 1rem; padding: .6rem; background: #fff; border-radius: 18px; box-shadow: var(--shadow); }
 .qr-box svg { display: block; width: 100%; height: auto; }
+
+/* ---------- WhatsApp messages ---------- */
+.link { background: none; border: 0; padding: 0; color: var(--rose-600); font: inherit; text-decoration: underline; cursor: pointer; }
+.pad { padding: 1rem; }
+.wa-auto { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; }
+.wa-auto .muted { font-size: .88rem; margin-top: .15rem; }
+.switch { position: relative; flex: none; width: 58px; height: 32px; }
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--silver-300); transition: background .2s; }
+.switch span::after { content: ''; position: absolute; top: 3px; inset-inline-start: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: inset-inline-start .2s; }
+.switch input:checked + span { background: var(--rose-grad); }
+.switch input:checked + span::after { inset-inline-start: 29px; }
+
+.wa { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: .8rem; height: calc(100vh - 290px); height: calc(100dvh - 290px); min-height: 440px; }
+.wa > .card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.wa-list { overflow-y: auto; }
+.wa-thread { display: flex; align-items: center; gap: .7rem; width: 100%; padding: .75rem .9rem; border: 0; border-bottom: 1px solid var(--silver-200); background: transparent; font: inherit; color: inherit; text-align: start; cursor: pointer; }
+.wa-thread:hover { background: var(--rose-50); }
+.wa-thread.active { background: var(--rose-100); }
+.wa-avatar { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--rose-grad); color: #fff; font-weight: 700; font-family: var(--serif); font-size: 1.15rem; }
+.wa-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+.wa-meta small { color: var(--silver-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wa-thread.unread .wa-meta small { color: var(--ink); font-weight: 700; }
+.wa-time { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; font-size: .78rem; color: var(--silver-500); }
+.wa-count { display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; padding: 0 .35rem; border-radius: 999px; background: var(--rose-500); color: #fff; font-style: normal; font-weight: 700; font-size: .75rem; }
+
+.wa-head { display: flex; align-items: center; gap: .7rem; padding: .7rem .9rem; border-bottom: 1px solid var(--silver-200); flex-wrap: wrap; }
+.wa-who { flex: 1; display: flex; flex-direction: column; min-width: 120px; }
+.wa-who small { color: var(--silver-500); }
+.wa-head .actions { max-width: none; }
+.wa-back { display: none; }
+.wa-msgs { flex: 1; overflow-y: auto; padding: .9rem; display: flex; flex-direction: column; gap: .5rem; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(251,230,237,.35)); }
+.wa-empty { margin: auto; text-align: center; color: var(--silver-500); }
+.wa-empty img { width: 90px; }
+.wa-b { max-width: min(78%, 520px); padding: .5rem .8rem .35rem; border-radius: 18px; box-shadow: 0 1px 3px rgba(138,61,95,.15); display: flex; flex-direction: column; gap: .1rem; }
+.wa-b p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.wa-b.in { align-self: flex-start; background: #fff; border-end-start-radius: 6px; }
+.wa-b.out { align-self: flex-end; background: var(--rose-100); border-end-end-radius: 6px; }
+.wa-b.queued { opacity: .65; }
+.wa-b.failed { background: #fbe9eb; box-shadow: inset 0 0 0 1px #e3b4ba; }
+.wa-by { color: var(--rose-600); font-size: .75rem; }
+.wa-at { color: var(--silver-500); font-size: .72rem; align-self: flex-end; }
+.wa-failed { color: var(--danger); font-size: .8rem; }
+.wa-compose { display: flex; gap: .5rem; align-items: flex-end; padding: .6rem; border-top: 1px solid var(--silver-200); background: rgba(255,255,255,.7); }
+.wa-compose textarea { flex: 1; min-height: 48px; max-height: 140px; resize: none; margin: 0; }
+.wa-compose .btn { min-height: 48px; }
+
+@media (max-width: 760px) {
+  .wa { grid-template-columns: 1fr; height: calc(100vh - 260px); height: calc(100dvh - 260px); }
+  .wa .wa-chat { display: none; }
+  .wa.wa-open .wa-chat { display: flex; }
+  .wa.wa-open .wa-list { display: none; }
+  .wa-back { display: inline-flex; }
+}
+
+.on-messages .bottom-bar { display: none !important; }   /* the reply box sits where the bar would be */

@@ -1,5 +1,5 @@
 // Where does the time go?   npm run speedtest
-// Measures the round trips a reply depends on: Firestore (reads/writes) and the AI model.
+// Measures the round trips a reply depends on: Firestore reads and writes.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as web } from '../../src/config.js';
@@ -26,20 +26,5 @@ show('  read', await repeat(5, () => ref.get()));
 show('  write', await repeat(5, () => ref.set({ at: new Date().toISOString() })));
 await ref.delete().catch(() => {});
 
-const key = process.env.GEMINI_API_KEY;
-if (!key || process.env.AI_PROVIDER === 'none') console.log('\nGemini: not used (menu mode)');
-else {
-  console.log('\nGemini:');
-  for (const model of [process.env.GEMINI_MODEL || 'gemini-flash-lite-latest', 'gemini-flash-latest']) {
-    show(`  ${model}`, await repeat(3, async () => {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'قل: أهلاً' }] }], generationConfig: { maxOutputTokens: 20 } }),
-      });
-      if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`);
-      await r.json();
-    }));
-  }
-}
-console.log('\nReading: Firestore under ~150 ms is fine; Gemini usually 700–2500 ms (higher through a VPN).');
+console.log('\nReading: under ~150 ms is fine; above ~400 ms means the internet connection of the bot device is the slow part.');
 process.exit(0);

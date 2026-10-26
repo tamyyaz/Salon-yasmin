@@ -1,6 +1,6 @@
 // Deploys dist/ (Hosting) and firestore.rules through the Firebase REST APIs.
 // Fallback for service-account keys that the Firebase CLI refuses (it wants extra Service Usage permissions).
-//   node scripts/deploy-rest.mjs --key path/to/service-account.json
+//   node scripts/deploy-rest.mjs --key path/to/service-account.json [--rules-only]
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { GoogleAuth } from 'google-auth-library';
 
-export async function deployRest(keyFile) {
+export async function deployRest(keyFile, { hosting = true } = {}) {
   const { project_id: P } = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
   const client = await new GoogleAuth({ keyFile, scopes: ['https://www.googleapis.com/auth/cloud-platform'] }).getClient();
   const call = async (url, method = 'GET', data, extra = {}) => {
@@ -34,6 +34,8 @@ export async function deployRest(keyFile) {
   }
   console.log('  rules: released');
   }
+
+  if (!hosting) return;
 
   // ---- Hosting ----
   const site = P;
@@ -66,5 +68,5 @@ export async function deployRest(keyFile) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const i = process.argv.indexOf('--key');
   if (i === -1) { console.error('usage: node scripts/deploy-rest.mjs --key <service-account.json>'); process.exit(1); }
-  await deployRest(process.argv[i + 1]);
+  await deployRest(process.argv[i + 1], { hosting: !process.argv.includes('--rules-only') });
 }

@@ -184,35 +184,6 @@ test('unknown messages: one hint, then the salon is told; "talk to someone" goes
   assert.equal((await db.collection('notes').get()).size, 2);
 });
 
-test('AI unreachable from this country: the menu answers and the model is not retried on every message', async () => {
-  let calls = 0;
-  const gemini = { generate: async () => { calls += 1; throw new Error('Gemini 400 (gemini-flash-lite-latest): User location is not supported for the API use.'); } };
-  const say = sayTo(newAgent({ gemini }));
-  assert.match(await say('قديش سعر القص؟'), /قص شعر: 25 ₪/);                      // known intent: instant, no model call at all
-  assert.equal(calls, 0);
-  assert.match(await say('كيف الطقس بالصين'), /ما فهمت قصدك/);                     // unknown: the model is tried once…
-  assert.match(await say('2'), /أي خدمة/);
-  assert.match(await say('هاد كلام غريب كمان'), /ما لقيت هالخدمة/);       // inside a booking step the menu answers, no model
-  assert.equal(calls, 1);                                                          // …and the refusal is remembered
-});
-
-test('menu first: known questions never wait for the AI; unknown ones are handed to it', async () => {
-  const seen = [];
-  const gemini = { generate: async ({ contents }) => { seen.push(contents.at(-1).parts[0].text); return { role: 'model', parts: [{ text: 'رد من الذكاء الاصطناعي' }] }; } };
-  const say = sayTo(newAgent({ gemini }));
-  assert.match(await say('قديش سعر القص'), /قص شعر: 25 ₪/);
-  assert.match(await say('وين الصالون'), /دمشق/);
-  assert.match(await say('2'), /أي خدمة/);
-  assert.deepEqual(seen, []);                                                      // none of that touched the model
-  assert.equal(await sayTo(newAgent({ gemini }), RANA)('بتعملوا تمديد رموش؟'), 'رد من الذكاء الاصطناعي');
-  assert.deepEqual(seen, ['بتعملوا تمديد رموش؟']);
-});
-
-test('ai-first mode still available for owners who prefer it', async () => {
-  const gemini = { generate: async () => ({ role: 'model', parts: [{ text: 'رد من الذكاء الاصطناعي' }] }) };
-  assert.equal(await sayTo(newAgent({ gemini, aiFirst: true }))('قديش القص'), 'رد من الذكاء الاصطناعي');
-});
-
 test('an unfinished booking is forgotten after 30 minutes of silence', async () => {
   const say = sayTo(newAgent());
   await say('2'); await say('قص');

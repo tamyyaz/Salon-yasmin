@@ -158,6 +158,31 @@ test('services and salon info round-trip through Firestore to another device', a
   assert.ok((await a.exportAll()).services.length >= 1);
 });
 
+test('WhatsApp conversations: threads and messages arrive live, a reply is queued for the bot, read marks clear the badge', async () => {
+  const s = await track();
+  assert.equal(s.unreadThreads, 0);
+  // the bot (Admin SDK) is simulated with the REST emulator endpoint that bypasses rules
+  const admin = async (path, fields) => fetch(`http://127.0.0.1:8080/v1/projects/demo-salon/databases/(default)/documents/${path}`, {
+    method: 'PATCH', headers: { authorization: 'Bearer owner', 'content-type': 'application/json' }, body: JSON.stringify({ fields }),
+  });
+  const str = (v) => ({ stringValue: v });
+  await admin('wa_threads/962791234567', { phone: str('+962791234567'), name: str('ليلى'), lastText: str('بدي موعد'), lastAt: str('2026-10-22T10:00:00.000Z'), unread: { integerValue: '2' } });
+  await admin('wa_threads/962791234567/messages/m1', { dir: str('in'), by: str('customer'), text: str('بدي موعد'), at: str('2026-10-22T10:00:00.000Z') });
+  await until(() => s.threads.length === 1 && s.unreadThreads === 1);
+  assert.equal(s.threads[0].name, 'ليلى');
+  s.openThread('962791234567');
+  await until(() => s.messages.length === 1);
+  assert.equal(s.messages[0].text, 'بدي موعد');
+  s.sendReply('962791234567', '  أهلاً فيكي  ');
+  assert.throws(() => s.sendReply('962791234567', '   '), /اكتبي/);
+  const queued = s.outbox;
+  assert.deepEqual(queued.map((o) => [o.phone, o.text, o.status]), [['+962791234567', 'أهلاً فيكي', 'queued']]);
+  s.markRead('962791234567');
+  await until(() => s.unreadThreads === 0);
+  s.closeThread();
+  assert.deepEqual(s.messages, []);
+});
+
 test('unknown routes fail clearly', async () => {
   const s = await track();
   await assert.rejects(s.api('/nope'), /غير موجود/);

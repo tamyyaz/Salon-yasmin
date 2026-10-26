@@ -23,7 +23,7 @@ const store = emulator || configured
 const api = (path, opts) => store.api(path, opts);
 
 const STATUS_LABEL = { pending: 'بانتظار التأكيد', booked: 'محجوز', came: 'حضر', no_show: 'لم يحضر', cancelled: 'ملغي' };
-const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, services: renderServices, notes: renderNotes };
+const ROUTES = { today: renderToday, appointments: renderAppointments, clients: renderClients, messages: renderMessages, services: renderServices, notes: renderNotes };
 
 // ---------- helpers ----------
 const fmtDate = (s, opts) => parseYmd(s).toLocaleDateString('ar-u-nu-latn', opts || { weekday: 'long', day: 'numeric', month: 'long' });
@@ -134,6 +134,9 @@ async function route({ silent = false } = {}) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
   view.classList.toggle('no-anim', silent);   // background refreshes shouldn't replay the entrance animation
   updatePendingBadge();
+  document.body.classList.toggle('on-messages', key === 'messages');
+  if (key !== 'messages') store.closeThread();
+  if (silent && key === 'messages' && $('#waList')) { paintMessages(); return; }   // keep the half-typed reply: only the lists are redrawn
   if (!silent) return attempt(() => ROUTES[key]());
   const y = window.scrollY;
   try { await ROUTES[key](); window.scrollTo(0, y); } catch { /* the offline banner already tells the story */ }
@@ -337,7 +340,7 @@ async function renderClients() {
 async function renderServices() {
   const [services, info] = await Promise.all([api('/services'), api('/settings')]);
   const infoFields = [
-    ['assistant_name', 'اسم مساعدة واتساب (بتعرّف عن حالها فيه)', 'input'], ['about', 'نبذة عن الصالون', 'textarea'], ['address', 'العنوان', 'input'], ['maps_url', 'رابط الموقع على الخريطة', 'input'],
+    ['assistant_name', 'اسم المساعدة الآلية بواتساب (بتعرّف عن حالها فيه)', 'input'], ['about', 'نبذة عن الصالون', 'textarea'], ['address', 'العنوان', 'input'], ['maps_url', 'رابط الموقع على الخريطة', 'input'],
     ['hours_text', 'ساعات الدوام (نص يظهر للزبائن)', 'input'], ['payment', 'طرق الدفع', 'input'], ['policies', 'سياسة الإلغاء والمواعيد', 'textarea'],
   ];
   view.innerHTML = `
@@ -479,6 +482,127 @@ async function renderNotes() {
       reload();
     });
   });
+}
+
+// ---------- WhatsApp messages: read the customers' chats and answer them from here ----------
+let waKey = null;                                      // the open conversation (the number's digits)
+const waTime = (iso) => {
+  const d = new Date(iso);
+  return ymd(d) === ymd(new Date()) ? d.toLocaleTimeString('ar-u-nu-latn', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('ar-u-nu-latn', { day: 'numeric', month: 'short' });
+};
+const WA_BY = { bot: '🤖 الرد الآلي', staff: 'من الموقع', phone: 'من موبايل الصالون' };
+
+async function renderMessages() {
+  const info = await api('/settings');
+  view.innerHTML = `
+    <section class="card wa-auto">
+      <div><b>الرد الآلي بالقوائم</b>
+        <div class="muted">يجاوب لحاله على الأسعار والعنوان والدوام ويستقبل طلبات الحجز. أطفئيه إذا بدكم الموظفات يردّوا بنفسهنّ.</div></div>
+      <label class="switch" title="الرد الآلي"><input type="checkbox" id="autoReply" ${info.auto_reply ? 'checked' : ''}><span></span></label>
+    </section>
+    <div class="wa ${waKey ? 'wa-open' : ''}" id="wa">
+      <aside class="wa-list card" id="waList"></aside>
+      <section class="wa-chat card">
+        <header class="wa-head" id="waHead"></header>
+        <div class="wa-msgs" id="waMsgs"></div>
+        <form class="wa-compose" id="waForm">
+          <textarea id="waText" rows="1" maxlength="1500" placeholder="اكتبي ردّك…" aria-label="الرد"></textarea>
+          <button class="btn btn-primary" type="submit">إرسال</button>
+        </form>
+      </section>
+    </div>`;
+
+  $('#autoReply', view).addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    const cur = await api('/settings');                       // always the latest, so saved info isn't overwritten
+    if (await attempt(() => api('/settings', { method: 'PUT', body: { ...cur, auto_reply: on } }))) toast(on ? 'الرد الآلي شغّال' : 'الرد الآلي مطفي — الموظفات يردّوا من هنا');
+  });
+  const select = (key) => {
+    waKey = key;
+    if (key) { store.openThread(key); store.markRead(key); } else store.closeThread();
+    $('#wa').classList.toggle('wa-open', !!key);
+    paintMessages(true);
+    if (key) $('#waText').focus();
+  };
+  $('#waList', view).addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) select(b.dataset.k); });
+  $('#waHead', view).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'back') select(null);
+    if (b.dataset.act === 'book') openAppointmentForm(null, { client_name: b.dataset.name, phone: `+${waKey}` });
+  });
+  $('#waMsgs', view).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-retry]');
+    if (b) { try { store.sendReply(waKey, b.dataset.retry); } catch (err) { toast(err.message); } paintMessages(); }
+  });
+  const form = $('#waForm', view);
+  const send = () => {
+    const box = $('#waText');
+    if (!waKey || !box.value.trim()) return;
+    try { store.sendReply(waKey, box.value); box.value = ''; box.style.height = ''; } catch (err) { toast(err.message); }
+    paintMessages(true);
+  };
+  form.addEventListener('submit', (e) => { e.preventDefault(); send(); });
+  $('#waText', view).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+  $('#waText', view).addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`; });
+
+  if (waKey) store.openThread(waKey);
+  paintMessages(true);
+}
+
+function paintMessages(toBottom = false) {
+  const list = $('#waList');
+  if (!list) return;
+  const names = store.phoneNames();
+  const threads = store.threads;
+  const nameOf = (t) => names.get(t.id.slice(-9)) || t.name || '';
+  list.innerHTML = threads.length ? threads.map((t) => {
+    const n = nameOf(t);
+    return `<button type="button" class="wa-thread ${t.id === waKey ? 'active' : ''} ${t.unread ? 'unread' : ''}" data-k="${esc(t.id)}">
+      <span class="wa-avatar">${esc((n || '+').trim().charAt(0))}</span>
+      <span class="wa-meta"><b>${n ? esc(n) : `<span dir="ltr">+${esc(t.id)}</span>`}</b>
+        <small>${t.lastBy === 'bot' ? '🤖 ' : t.lastDir === 'out' ? '↩ ' : ''}${esc(t.lastText)}</small></span>
+      <span class="wa-time">${esc(waTime(t.lastAt))}${t.unread ? `<i class="wa-count">${t.unread}</i>` : ''}</span>
+    </button>`;
+  }).join('') : '<p class="muted pad">ما وصلت رسائل بعد. أي رسالة واتساب جديدة للصالون رح تظهر هون.</p>';
+
+  const head = $('#waHead');
+  const msgs = $('#waMsgs');
+  const compose = $('#waForm');
+  const t = threads.find((x) => x.id === waKey);
+  compose.classList.toggle('hidden', !waKey);
+  if (!waKey) {
+    head.innerHTML = '';
+    msgs.innerHTML = '<div class="wa-empty"><img class="wiggle" src="/art/bouquet.svg" alt=""><p>اختاري محادثة من القائمة لقراءتها والرد عليها</p></div>';
+    return;
+  }
+  const name = (t && nameOf(t)) || '';
+  head.innerHTML = `<button type="button" class="btn btn-sm wa-back" data-act="back">‹ المحادثات</button>
+    <div class="wa-who"><b>${name ? esc(name) : `<span dir="ltr">+${esc(waKey)}</span>`}</b>${name ? `<small dir="ltr">+${esc(waKey)}</small>` : ''}</div>
+    <div class="actions"><a class="btn btn-sm" href="tel:+${esc(waKey)}">اتصال</a>
+      <button type="button" class="btn btn-sm" data-act="book" data-name="${esc(name)}">＋ حجز موعد</button></div>`;
+
+  const botOff = (botHealth()?.level ?? 'off') === 'off';
+  const pending = store.outbox.filter((o) => o.phone === `+${waKey}`).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const rows = [...store.messages.map((m) => ({ ...m })), ...pending.map((o) => ({ id: o.id, dir: 'out', by: 'staff', text: o.text, at: o.created_at, queued: true }))];
+  const near = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
+  msgs.innerHTML = rows.length ? rows.map((m) => `
+    <div class="wa-b ${m.dir} ${m.status === 'failed' ? 'failed' : ''} ${m.queued ? 'queued' : ''}">
+      ${m.dir === 'out' && WA_BY[m.by] ? `<small class="wa-by">${WA_BY[m.by]}</small>` : ''}
+      <p>${esc(m.text)}</p>
+      <small class="wa-at">${esc(waTime(m.at))}${m.queued ? (botOff ? ' · ⚠️ جهاز البوت غير متصل — بتنرسل لما يرجع' : ' · ⏳ جارٍ الإرسال') : ''}</small>
+      ${m.status === 'failed' ? `<small class="wa-failed">لم تُرسل (${esc(m.error || 'خطأ')}) <button type="button" class="link" data-retry="${esc(m.text)}">إعادة المحاولة</button></small>` : ''}
+    </div>`).join('') : '<p class="muted pad">جارٍ تحميل الرسائل…</p>';
+  if (toBottom || near) msgs.scrollTop = msgs.scrollHeight;
+  if (t?.unread && !document.hidden) store.markRead(waKey);
+}
+
+function paintInboxBadge() {
+  const n = store?.unreadThreads || 0;
+  const link = $('#nav a[data-route="messages"]');
+  if (n) link.dataset.badge = n; else delete link.dataset.badge;
+  document.title = n ? `(${n}) ${state.name}` : state.name;
 }
 
 async function downloadBackup() {
@@ -766,7 +890,6 @@ $('#botBtn').addEventListener('click', () => {
     ${s.number ? `<p class="muted">الرقم: <span dir="ltr">+${esc(s.number)}</span></p>` : ''}
     ${s.qr ? `<p>على موبايل الصالون: واتساب ← الأجهزة المرتبطة ← <b>ربط جهاز</b> ← امسحي هالرمز:</p><div class="qr-box">${qrSvg(s.qr)}</div>` : ''}
     ${s.pairingCode ? `<p>على الموبايل: واتساب ← الأجهزة المرتبطة ← ربط جهاز ← <b>الربط برقم الهاتف</b> وأدخلي:</p><div class="pair-code">${esc(s.pairingCode)}</div>` : ''}
-    ${s.gemini ? `<p>الذكاء الاصطناعي: <b>${s.gemini.ok ? '✅' : '⚠️'} ${esc(s.gemini.text)}</b></p>` : ''}
     <p class="muted">آخر إشارة: ${esc(fmtStamp(s.updatedAt))}</p>
     <div class="modal-actions"><button class="btn" type="button" data-close>إغلاق</button></div>`,
     (card) => card.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal)));
@@ -787,6 +910,7 @@ function refresh() {
     if (state.date === lastDay) state.date = today;
     lastDay = today;
   }
+  if ($('#waList') && (location.hash.replace('#/', '') || '').startsWith('messages')) { paintMessages(); return; }
   const busy = !$('#modal').classList.contains('hidden') || !$('#ask').classList.contains('hidden');
   const typing = [...view.querySelectorAll('input, textarea')].some((el) => el.value !== el.defaultValue);
   if (busy || typing) return;
@@ -798,7 +922,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ac
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 // changes made on any device arrive live; re-draw quietly (the same guards as the timer apply)
-store?.subscribe(() => { paintBot(); refresh(); });
+store?.subscribe(() => { paintBot(); paintInboxBadge(); refresh(); });
 store?.onError((err) => {
   console.error(err);
   toast(err?.code === 'permission-denied' ? 'لا توجد صلاحية لحفظ هذا التغيير' : 'تعذّر حفظ آخر تغيير، تحقق من الاتصال');

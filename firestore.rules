@@ -58,7 +58,8 @@ service cloud.firestore {
     }
 
     function validSettings(d) {
-      return d.keys().hasOnly(['assistant_name', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+      return d.keys().hasOnly(['assistant_name', 'auto_reply', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+        && (!('auto_reply' in d) || d.auto_reply is bool)
         && (!('assistant_name' in d) || (d.assistant_name is string && d.assistant_name.size() <= 40))
         && d.about is string && d.about.size() <= 600
         && d.address is string && d.address.size() <= 300
@@ -77,6 +78,27 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if isSalon();
       allow create, update: if isSalon() && id == 'salon' && validSettings(request.resource.data);
+    }
+
+    // WhatsApp conversations: mirrored here by the bot (Admin SDK). The app reads them, may mark a thread as read,
+    // and queues replies in wa_outbox, which the bot sends and then removes.
+    match /wa_threads/{phone} {
+      allow read: if isSalon();
+      allow update: if isSalon()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unread'])
+        && request.resource.data.unread == 0;
+      match /messages/{id} {
+        allow read: if isSalon();
+      }
+    }
+    match /wa_outbox/{id} {
+      allow read: if isSalon();
+      allow create: if isSalon()
+        && request.resource.data.keys().hasOnly(['phone', 'text', 'status', 'created_at'])
+        && request.resource.data.status == 'queued'
+        && request.resource.data.phone is string && request.resource.data.phone.matches('^\\+?[0-9]{7,15}$')
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1500
+        && request.resource.data.created_at is string;
     }
 
     match /notes/{id} {

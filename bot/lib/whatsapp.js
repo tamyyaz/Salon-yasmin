@@ -34,7 +34,7 @@ export async function parseIncoming(msg, { sock, now = Date.now(), maxAgeMs = 6 
   const text = m?.conversation ?? m?.extendedTextMessage?.text ?? null;
   const hasMedia = MEDIA.some((k) => m?.[k]);
   if (text == null && !hasMedia) return null;
-  return { jid: key.remoteJid, chatId: chatIdOf(jid), text: text ?? '', hasMedia, messageId: key.id, fromMe: !!key.fromMe, key };
+  return { jid: key.remoteJid, chatId: chatIdOf(jid), text: text ?? '', hasMedia, messageId: key.id, fromMe: !!key.fromMe, name: key.fromMe ? null : String(msg.pushName || '').slice(0, 60) || null, key };
 }
 
 export function createWhatsApp({

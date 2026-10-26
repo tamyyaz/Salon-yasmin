@@ -41,7 +41,7 @@ Authentication ← Users)، ثم يبني وينشر القواعد والموق
 بدو سرّ واحد (استخدم حساب خدمة مخصّص بصلاحيات محدودة، مش مفتاح الـ Admin SDK):
 
 1. Google Cloud Console ← IAM & Admin ← **Service Accounts** ← Create: اسمه `github-deploy`
-   بصلاحيات **Firebase Hosting Admin** و**API Keys Viewer**.
+   بصلاحيات **Firebase Hosting Admin** و**API Keys Viewer** و**Firebase Rules Admin** (الأخيرة لنشر قواعد الأمان تلقائياً).
 2. على الحساب: Keys ← Add key ← **JSON** (بينزل ملف).
 3. GitHub ← مستودع `Salon-yasmin` ← Settings ← Secrets and variables ← Actions ← **New repository secret**:
    الاسم `FIREBASE_SERVICE_ACCOUNT` والقيمة محتوى ملف JSON كله.

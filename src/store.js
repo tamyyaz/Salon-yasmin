@@ -16,7 +16,7 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, connectFirestoreEmulator,
   terminate, clearIndexedDbPersistence, collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getDocsFromCache,
-  onSnapshot, query, where, arrayUnion, arrayRemove,
+  onSnapshot, query, where, orderBy, limit, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
 import {
   STATUSES, parseAppointment, money, str, normPhone, dueOf, withBalance, filterAppointments, groupClients,
@@ -63,6 +63,11 @@ export function createStore({
   const services = new Map();
   let settings = null;
   let botStatus = null;            // heartbeat written by the WhatsApp bot, if one is running
+  const threads = new Map();       // WhatsApp conversations mirrored by the bot (digits -> {phone, name, lastText, lastAt, unread})
+  const outbox = new Map();        // replies typed here that the bot has not sent yet
+  let openKey = null;              // the conversation shown on screen: its messages are listened to live
+  let openMessages = [];
+  let offMessages = () => {};
   const listeners = new Set();
   const errorHandlers = new Set();
   let unsubs = [];
@@ -137,13 +142,55 @@ export function createStore({
       listen('services', collection(db, 'services'), (s) => { services.clear(); s.docs.forEach((d) => services.set(d.id, { id: d.id, ...d.data() })); }),
       listen('salon settings', doc(db, 'settings', 'salon'), (s) => { settings = s.exists() ? s.data() : null; }),
       listen('bot status', doc(db, 'bot_status', 'main'), (snap) => { botStatus = snap.exists() ? snap.data() : null; }),
+      listen('whatsapp threads', query(collection(db, 'wa_threads'), orderBy('lastAt', 'desc'), limit(150)), (s) => { threads.clear(); s.docs.forEach((d) => threads.set(d.id, { id: d.id, ...d.data() })); }),
+      listen('whatsapp outbox', collection(db, 'wa_outbox'), (s) => { outbox.clear(); s.docs.forEach((d) => outbox.set(d.id, { id: d.id, ...d.data() })); }),
     ]), 8000).catch(() => {});
   }
 
   function stop() {
     unsubs.forEach((fn) => fn());
     unsubs = [];
-    docs.clear(); inRecent.clear(); inUnpaid.clear(); notes.clear(); services.clear(); settings = null;
+    closeThread();
+    docs.clear(); inRecent.clear(); inUnpaid.clear(); notes.clear(); services.clear(); settings = null; threads.clear(); outbox.clear();
+  }
+
+  // ---------- WhatsApp messages ----------
+  /** Starts listening to one conversation's messages (the last 200); the previous one stops. */
+  function openThread(key) {
+    if (openKey === key) return;
+    closeThread();
+    openKey = key;
+    offMessages = onSnapshot(query(collection(db, 'wa_threads', key, 'messages'), orderBy('at', 'desc'), limit(200)), (snap) => {
+      openMessages = snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
+      notify();
+    }, (err) => console.warn('[firestore listener failed: messages]', err.code));
+  }
+  function closeThread() { offMessages(); offMessages = () => {}; openKey = null; openMessages = []; }
+
+  /** Queues a reply: the bot on the salon's device sends it through WhatsApp. */
+  function sendReply(key, text) {
+    const clean = str(text, 1500);
+    if (!clean) throw new Error('اكتبي الرسالة أولاً');
+    const ref = doc(collection(db, 'wa_outbox'));
+    const data = { phone: `+${key}`, text: clean, status: 'queued', created_at: nowISO() };
+    outbox.set(ref.id, { id: ref.id, ...data });
+    notify();
+    setDoc(ref, data).catch(reportError);
+  }
+  function markRead(key) {
+    const t = threads.get(key);
+    if (!t || !t.unread) return;
+    threads.set(key, { ...t, unread: 0 });
+    updateDoc(doc(db, 'wa_threads', key), { unread: 0 }).catch(() => {});
+  }
+  /** Names we already know from appointments, by the last 9 digits of the number (so 0991… and +963991… match). */
+  function phoneNames() {
+    const names = new Map();
+    for (const a of docs.values()) {
+      const d = String(a.phone || '').replace(/\D/g, '');
+      if (d.length >= 7 && a.client_name) names.set(d.slice(-9), a.client_name);
+    }
+    return names;
   }
 
   // ---------- on-demand fetches ----------
@@ -395,5 +442,11 @@ export function createStore({
     onError: (fn) => { errorHandlers.add(fn); return () => errorHandlers.delete(fn); },
     get windowStart() { return windowStart; },
     get botStatus() { return botStatus; },
+    // WhatsApp messages screen
+    get threads() { return [...threads.values()].sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))); },
+    get unreadThreads() { return [...threads.values()].filter((t) => t.unread > 0).length; },
+    get outbox() { return [...outbox.values()]; },
+    get messages() { return openMessages; },
+    openThread, closeThread, sendReply, markRead, phoneNames,
   };
 }

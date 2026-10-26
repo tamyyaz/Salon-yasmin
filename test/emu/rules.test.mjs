@@ -94,6 +94,44 @@ test('bot_status is readable by the salon only and never writable from the app',
   await assertFails(setDoc(doc(salon(), 'bot_status/main'), { state: 'hacked', updatedAt: 'now' }));
 });
 
+test('WhatsApp messages: read-only for the salon, replies queue in wa_outbox, only "mark read" may be changed', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'wa_threads/962791234567'), { phone: '+962791234567', lastText: 'هاي', lastAt: 'now', unread: 3 });
+    await setDoc(doc(ctx.firestore(), 'wa_threads/962791234567/messages/m1'), { dir: 'in', by: 'customer', text: 'هاي', at: 'now' });
+  });
+  const db = salon();
+  await assertSucceeds(getDoc(doc(db, 'wa_threads/962791234567')));
+  await assertSucceeds(getDoc(doc(db, 'wa_threads/962791234567/messages/m1')));
+  for (const other of [anon(), stranger()]) {
+    await assertFails(getDoc(doc(other, 'wa_threads/962791234567')));
+    await assertFails(getDoc(doc(other, 'wa_threads/962791234567/messages/m1')));
+  }
+  await assertSucceeds(updateDoc(doc(db, 'wa_threads/962791234567'), { unread: 0 }));
+  await assertFails(updateDoc(doc(db, 'wa_threads/962791234567'), { unread: 5 }));            // only "read", never other values
+  await assertFails(updateDoc(doc(db, 'wa_threads/962791234567'), { lastText: 'x' }));
+  await assertFails(setDoc(doc(db, 'wa_threads/962799999999'), { phone: '+962799999999', unread: 0 }));
+  await assertFails(setDoc(doc(db, 'wa_threads/962791234567/messages/m2'), { dir: 'in', by: 'customer', text: 'fake', at: 'now' }));
+  await assertFails(deleteDoc(doc(db, 'wa_threads/962791234567/messages/m1')));
+
+  const out = (o = {}) => ({ phone: '+962791234567', text: 'أهلاً', status: 'queued', created_at: 'now', ...o });
+  await assertSucceeds(setDoc(doc(db, 'wa_outbox/o1'), out()));
+  await assertSucceeds(getDoc(doc(db, 'wa_outbox/o1')));
+  await assertFails(setDoc(doc(db, 'wa_outbox/o2'), out({ text: '' })));
+  await assertFails(setDoc(doc(db, 'wa_outbox/o3'), out({ text: 'x'.repeat(1501) })));
+  await assertFails(setDoc(doc(db, 'wa_outbox/o4'), out({ phone: 'abc' })));
+  await assertFails(setDoc(doc(db, 'wa_outbox/o5'), out({ status: 'sent' })));
+  await assertFails(setDoc(doc(db, 'wa_outbox/o6'), out({ extra: 1 })));
+  await assertFails(setDoc(doc(stranger(), 'wa_outbox/o7'), out()));
+  await assertFails(updateDoc(doc(db, 'wa_outbox/o1'), { text: 'changed' }));
+});
+
+test('settings accept the auto_reply switch, and only as a boolean', async () => {
+  const base = { assistant_name: '', about: '', address: '', maps_url: '', hours_text: '', payment: '', policies: '', faq: [] };
+  await assertSucceeds(setDoc(doc(salon(), 'settings/salon'), { ...base, auto_reply: false }));
+  await assertFails(setDoc(doc(salon(), 'settings/salon'), { ...base, auto_reply: 'no' }));
+  await assertSucceeds(setDoc(doc(salon(), 'settings/salon'), base));                         // old documents without the field stay valid
+});
+
 test('notes are validated and other collections stay closed', async () => {
   const db = salon();
   await assertSucceeds(setDoc(doc(db, 'notes/n1'), { text: 'مواد صبغة', pinned: false, done: false, created_at: 'now' }));
