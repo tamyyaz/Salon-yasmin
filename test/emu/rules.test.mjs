@@ -129,6 +129,8 @@ test('settings accept the auto_reply switch, and only as a boolean', async () =>
   const base = { assistant_name: '', about: '', address: '', maps_url: '', hours_text: '', payment: '', policies: '', faq: [] };
   await assertSucceeds(setDoc(doc(salon(), 'settings/salon'), { ...base, auto_reply: false }));
   await assertFails(setDoc(doc(salon(), 'settings/salon'), { ...base, auto_reply: 'no' }));
+  await assertSucceeds(setDoc(doc(salon(), 'settings/salon'), { ...base, mask_phones: true }));
+  await assertFails(setDoc(doc(salon(), 'settings/salon'), { ...base, mask_phones: 'yes' }));
   await assertSucceeds(setDoc(doc(salon(), 'settings/salon'), base));                         // old documents without the field stay valid
 });
 

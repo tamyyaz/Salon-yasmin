@@ -33,6 +33,10 @@ const fmtNum = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits:
 const money = (n) => `${fmtNum(n)} ${state.currency}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nowTime = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// "hide customers' numbers" switch (Services screen): numbers show as ••••1234, and the call / WhatsApp links disappear
+const masked = () => !!store?.settings?.mask_phones;
+const maskPhone = (p) => `••••${String(p).replace(/\D/g, '').slice(-4)}`;
+const showPhone = (p) => (masked() ? maskPhone(p) : String(p));
 const waLink = (phone) => `https://wa.me/${phone.replace(/\D/g, '').replace(/^0+/, '')}`;
 
 let toastTimer;
@@ -164,9 +168,9 @@ function hero({ title, sub, tone = 'a', actions = '' }) {
 }
 
 function apptCard(a, { showDate = false } = {}) {
-  const phone = a.phone
-    ? `<a href="tel:${esc(a.phone)}">${esc(a.phone)}</a><a href="${waLink(a.phone)}" target="_blank" rel="noopener">واتساب</a>`
-    : '';
+  const phone = !a.phone ? ''
+    : masked() ? `<span dir="ltr">${esc(maskPhone(a.phone))}</span>`
+      : `<a href="tel:${esc(a.phone)}">${esc(a.phone)}</a><a href="${waLink(a.phone)}" target="_blank" rel="noopener">واتساب</a>`;
   const remClass = a.remaining > 0 ? 'rem-due' : 'rem-ok';
   const done = a.status === 'came';
   return `<article class="card appt is-${a.status}" data-id="${a.id}">
@@ -320,7 +324,7 @@ async function renderClients() {
           <div>
             <div class="appt-name">${esc(c.name)}</div>
             <div class="appt-meta">
-              ${c.phone ? `<span dir="ltr">${esc(c.phone)}</span>` : '<span>بدون رقم</span>'}
+              ${c.phone ? `<span dir="ltr">${esc(showPhone(c.phone))}</span>` : '<span>بدون رقم</span>'}
               <span>${c.visits} زيارة</span><span>حضر ${c.came || 0}</span>
               ${c.no_show ? `<span>لم يحضر ${c.no_show}</span>` : ''}
               <span>آخر موعد: ${esc(fmtDate(c.last_date, { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
@@ -361,6 +365,13 @@ async function renderServices() {
           </div>
         </article>`).join('') : emptyState('ما في خدمات بعد — أضيفي أول خدمة')}
     </div>
+
+    <div class="section-title"><h3>الخصوصية</h3></div>
+    <section class="card wa-auto">
+      <div><b>إخفاء أرقام الزبائن</b>
+        <div class="muted">يظهر آخر 4 أرقام فقط (••••1234) بكل الشاشات، وتختفي أزرار الاتصال والواتساب. الرقم يبقى محفوظاً.</div></div>
+      <label class="switch" title="إخفاء الأرقام"><input type="checkbox" id="maskPhones" ${info.mask_phones ? 'checked' : ''}><span></span></label>
+    </section>
 
     <div class="section-title"><h3>معلومات الصالون</h3></div>
     <form class="card" id="infoForm">
@@ -417,6 +428,11 @@ async function renderServices() {
     });
   };
 
+  $('#maskPhones', view).addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    const cur = await api('/settings');
+    if (await attempt(() => api('/settings', { method: 'PUT', body: { ...cur, mask_phones: on } }))) toast(on ? 'أرقام الزبائن مخفية (آخر 4 أرقام فقط)' : 'أرقام الزبائن ظاهرة');
+  });
   $('#addService', view).addEventListener('click', () => serviceForm());
   $('#addFaq', view).addEventListener('click', () => faqForm());
   $('#infoForm', view).addEventListener('submit', async (e) => {
@@ -561,7 +577,7 @@ function paintMessages(toBottom = false) {
     const n = nameOf(t);
     return `<button type="button" class="wa-thread ${t.id === waKey ? 'active' : ''} ${t.unread ? 'unread' : ''}" data-k="${esc(t.id)}">
       <span class="wa-avatar">${esc((n || '+').trim().charAt(0))}</span>
-      <span class="wa-meta"><b>${n ? esc(n) : `<span dir="ltr">+${esc(t.id)}</span>`}</b>
+      <span class="wa-meta"><b>${n ? esc(n) : `<span dir="ltr">${esc(showPhone(`+${t.id}`))}</span>`}</b>
         <small>${t.lastBy === 'bot' ? '🤖 ' : t.lastDir === 'out' ? '↩ ' : ''}${esc(t.lastText)}</small></span>
       <span class="wa-time">${esc(waTime(t.lastAt))}${t.unread ? `<i class="wa-count">${t.unread}</i>` : ''}</span>
     </button>`;
@@ -579,8 +595,8 @@ function paintMessages(toBottom = false) {
   }
   const name = (t && nameOf(t)) || '';
   head.innerHTML = `<button type="button" class="btn btn-sm wa-back" data-act="back">‹ المحادثات</button>
-    <div class="wa-who"><b>${name ? esc(name) : `<span dir="ltr">+${esc(waKey)}</span>`}</b>${name ? `<small dir="ltr">+${esc(waKey)}</small>` : ''}</div>
-    <div class="actions"><a class="btn btn-sm" href="tel:+${esc(waKey)}">اتصال</a>
+    <div class="wa-who"><b>${name ? esc(name) : `<span dir="ltr">${esc(showPhone(`+${waKey}`))}</span>`}</b>${name ? `<small dir="ltr">${esc(showPhone(`+${waKey}`))}</small>` : ''}</div>
+    <div class="actions">${masked() ? '' : `<a class="btn btn-sm" href="tel:+${esc(waKey)}">اتصال</a>`}
       <button type="button" class="btn btn-sm" data-act="book" data-name="${esc(name)}">＋ حجز موعد</button></div>`;
 
   const botOff = (botHealth()?.level ?? 'off') === 'off';
@@ -621,10 +637,11 @@ async function openAppointmentForm(a = null, defaults = {}) {
   const isEdit = !!a;
   const svc = (await api('/services').catch(() => [])).filter((s) => s.active);
   const v = a || { client_name: '', phone: '', date: state.date, time: '10:00', service: '', price: '', note: '', status: 'booked', ...defaults };
+  const lockedPhone = masked() && !!v.phone;                 // numbers are hidden: an existing number stays as it is
   openModal(`
     <form id="apptForm">
       <h3>${isEdit ? 'تعديل الموعد' : 'حجز جديد'}</h3>
-      <label class="field"><span>رقم الزبون</span><input type="tel" inputmode="tel" name="phone" value="${esc(v.phone)}" placeholder="مثال: 0790000000"></label>
+      <label class="field"><span>رقم الزبون</span><input type="tel" inputmode="tel" name="phone" value="${esc(lockedPhone ? maskPhone(v.phone) : v.phone)}" placeholder="مثال: 0790000000" ${lockedPhone ? `readonly data-locked="${esc(v.phone)}"` : ''}></label>
       <label class="field"><span>اسم الزبون *</span><input name="client_name" value="${esc(v.client_name)}" required maxlength="80"></label>
       <div class="row">
         <label class="field"><span>التاريخ *</span><input type="date" name="date" value="${esc(v.date)}" required></label>
@@ -683,7 +700,7 @@ async function openAppointmentForm(a = null, defaults = {}) {
 
     // typing a known phone number fills in the name
     form.phone.addEventListener('change', async () => {
-      if (form.client_name.value || form.phone.value.length < 6) return;
+      if (form.client_name.value || form.phone.value.length < 6 || form.phone.readOnly) return;
       const found = await api(`/clients?q=${encodeURIComponent(form.phone.value)}`).catch(() => []);
       if (found[0]) form.client_name.value = found[0].name;
     });
@@ -691,6 +708,7 @@ async function openAppointmentForm(a = null, defaults = {}) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(form));
+      if (form.phone.dataset.locked) body.phone = form.phone.dataset.locked;
       $('#formError').textContent = '';
       try {
         if (!isEdit) {

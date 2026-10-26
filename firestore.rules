@@ -58,8 +58,9 @@ service cloud.firestore {
     }
 
     function validSettings(d) {
-      return d.keys().hasOnly(['assistant_name', 'auto_reply', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+      return d.keys().hasOnly(['assistant_name', 'auto_reply', 'mask_phones', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
         && (!('auto_reply' in d) || d.auto_reply is bool)
+        && (!('mask_phones' in d) || d.mask_phones is bool)
         && (!('assistant_name' in d) || (d.assistant_name is string && d.assistant_name.size() <= 40))
         && d.about is string && d.about.size() <= 600
         && d.address is string && d.address.size() <= 300

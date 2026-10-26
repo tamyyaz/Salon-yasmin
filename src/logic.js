@@ -79,7 +79,7 @@ export function parseSettings(body) {
   const faq = (Array.isArray(body.faq) ? body.faq : []).slice(0, 30)
     .map((f) => ({ q: str(f?.q, 200), a: str(f?.a, 600) })).filter((f) => f.q && f.a);
   return {
-    auto_reply: body.auto_reply !== false, assistant_name: field('assistant_name', 40), about: field('about', 600), address: field('address', 300), maps_url: field('maps_url', 300),
+    auto_reply: body.auto_reply !== false, mask_phones: body.mask_phones === true, assistant_name: field('assistant_name', 40), about: field('about', 600), address: field('address', 300), maps_url: field('maps_url', 300),
     hours_text: field('hours_text', 300), payment: field('payment', 300), policies: field('policies', 800), faq,
   };
 }

@@ -442,6 +442,7 @@ export function createStore({
     onError: (fn) => { errorHandlers.add(fn); return () => errorHandlers.delete(fn); },
     get windowStart() { return windowStart; },
     get botStatus() { return botStatus; },
+    get settings() { return settings; },
     // WhatsApp messages screen
     get threads() { return [...threads.values()].sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))); },
     get unreadThreads() { return [...threads.values()].filter((t) => t.unread > 0).length; },

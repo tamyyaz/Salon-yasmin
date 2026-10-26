@@ -111,6 +111,7 @@ test('services and salon info are validated and trimmed', () => {
   assert.deepEqual([st.about, st.hours_text, st.faq.length, st.address], ['صالون', 'يومياً 9-9', 1, '']);
   assert.equal(parseSettings({ assistant_name: '  ليان  ' }).assistant_name, 'ليان');
   assert.deepEqual([parseSettings({}).auto_reply, parseSettings({ auto_reply: false }).auto_reply], [true, false]);   // on unless switched off
+  assert.deepEqual([parseSettings({}).mask_phones, parseSettings({ mask_phones: true }).mask_phones, parseSettings({ mask_phones: 'yes' }).mask_phones], [false, true, false]);
   assert.equal(parseSettings({ assistant_name: 'x'.repeat(100) }).assistant_name.length, 40);
   assert.equal(parseSettings({ faq: Array.from({ length: 50 }, () => ({ q: 'q', a: 'a' })) }).faq.length, 30);
   assert.deepEqual(sortServices([{ name: 'ب' }, { name: 'أ' }]).map((x) => x.name), ['أ', 'ب']);
