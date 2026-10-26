@@ -1,0 +1,110 @@
+rules_version = '2';
+
+// Only the salon's own account may touch anything. The email must match `salonEmail` in src/config.js.
+// (Pinning the email matters: with email/password sign-in enabled, anyone could otherwise create
+// their own account with the public API key and read the data.)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSalon() {
+      return request.auth != null
+        && request.auth.token.email == 'salon@yasmin.app';
+    }
+
+    function validAppointment(d) {
+      return d.keys().hasOnly(['client_name', 'phone', 'date', 'time', 'service', 'price', 'status', 'walk_in', 'note', 'created_at', 'payments', 'due', 'source', 'wa_notified'])
+        && d.keys().hasAll(['client_name', 'phone', 'date', 'time', 'service', 'price', 'status', 'walk_in', 'note', 'created_at', 'payments', 'due'])
+        && (!('source' in d) || d.source == 'whatsapp')
+        && (!('wa_notified' in d) || d.wa_notified is string)
+        && d.client_name is string && d.client_name.size() > 0 && d.client_name.size() <= 80
+        && d.phone is string && d.phone.size() <= 30
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.time is string && d.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && d['service'] is string && d['service'].size() <= 120
+        && d.price is number && d.price >= 0 && d.price <= 10000000
+        && d.status in ['pending', 'booked', 'came', 'no_show', 'cancelled']
+        && d.walk_in is bool
+        && d.note is string && d.note.size() <= 1000
+        && d.created_at is string
+        && d.payments is list && d.payments.size() <= 200
+        && d.due is number && d.due >= 0;
+    }
+
+    function validNote(d) {
+      return d.keys().hasOnly(['text', 'pinned', 'done', 'created_at'])
+        && d.keys().hasAll(['text', 'pinned', 'done', 'created_at'])
+        && d.text is string && d.text.size() > 0 && d.text.size() <= 2000
+        && d.pinned is bool && d.done is bool
+        && d.created_at is string;
+    }
+
+    match /appointments/{id} {
+      allow read, delete: if isSalon();
+      allow create, update: if isSalon() && validAppointment(request.resource.data);
+    }
+
+    // written only by the WhatsApp bot (Admin SDK); the app just shows it
+    match /bot_status/{id} {
+      allow read: if isSalon();
+    }
+
+    function validService(d) {
+      return d.keys().hasOnly(['name', 'price', 'note', 'active'])
+        && d.keys().hasAll(['name', 'price', 'note', 'active'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && (d.price == null || (d.price is number && d.price >= 0 && d.price <= 10000000))
+        && d.note is string && d.note.size() <= 300
+        && d.active is bool;
+    }
+
+    function validSettings(d) {
+      return d.keys().hasOnly(['assistant_name', 'auto_reply', 'mask_phones', 'about', 'address', 'maps_url', 'hours_text', 'payment', 'policies', 'faq'])
+        && (!('auto_reply' in d) || d.auto_reply is bool)
+        && (!('mask_phones' in d) || d.mask_phones is bool)
+        && (!('assistant_name' in d) || (d.assistant_name is string && d.assistant_name.size() <= 40))
+        && d.about is string && d.about.size() <= 600
+        && d.address is string && d.address.size() <= 300
+        && d.maps_url is string && d.maps_url.size() <= 300
+        && d.hours_text is string && d.hours_text.size() <= 300
+        && d.payment is string && d.payment.size() <= 300
+        && d.policies is string && d.policies.size() <= 800
+        && d.faq is list && d.faq.size() <= 30;
+    }
+
+    // what the assistant knows about the salon: prices, info, FAQ
+    match /services/{id} {
+      allow read, delete: if isSalon();
+      allow create, update: if isSalon() && validService(request.resource.data);
+    }
+    match /settings/{id} {
+      allow read: if isSalon();
+      allow create, update: if isSalon() && id == 'salon' && validSettings(request.resource.data);
+    }
+
+    // WhatsApp conversations: mirrored here by the bot (Admin SDK). The app reads them, may mark a thread as read,
+    // and queues replies in wa_outbox, which the bot sends and then removes.
+    match /wa_threads/{phone} {
+      allow read: if isSalon();
+      allow update: if isSalon()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unread'])
+        && request.resource.data.unread == 0;
+      match /messages/{id} {
+        allow read: if isSalon();
+      }
+    }
+    match /wa_outbox/{id} {
+      allow read: if isSalon();
+      allow create: if isSalon()
+        && request.resource.data.keys().hasOnly(['phone', 'text', 'status', 'created_at'])
+        && request.resource.data.status == 'queued'
+        && request.resource.data.phone is string && request.resource.data.phone.matches('^\\+?[0-9]{7,15}$')
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1500
+        && request.resource.data.created_at is string;
+    }
+
+    match /notes/{id} {
+      allow read, delete: if isSalon();
+      allow create, update: if isSalon() && validNote(request.resource.data);
+    }
+  }
+}

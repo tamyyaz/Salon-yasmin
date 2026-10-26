@@ -1,0 +1,16 @@
+# Linux (systemd). Edit User and the paths, then:
+#   sudo cp salon-bot.service /etc/systemd/system/ && sudo systemctl enable --now salon-bot
+[Unit]
+Description=Salon WhatsApp assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=salon
+WorkingDirectory=/home/salon/Salon-yasmin/bot
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+{
+  "name": "salon-yasmin",
+  "version": "1.0.0",
+  "description": "نظام حجز مواعيد صالون ياسمين (Firebase)",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/logic.test.mjs",
+    "test:emu": "firebase emulators:exec --only auth,firestore --project demo-salon \"node --test test/emu/rules.test.mjs test/emu/store.test.mjs\"",
+    "emulators": "firebase emulators:start --only auth,firestore --project salon-yasmin",
+    "serve": "node scripts/serve.mjs",
+    "dev": "node scripts/dev.mjs",
+    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules",
+    "test:bot": "firebase emulators:exec --only firestore --project demo-salon-bot \"npm --prefix bot test\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tamyyaz/Salon-yasmin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tamyyaz/Salon-yasmin/issues"
+  },
+  "homepage": "https://github.com/tamyyaz/Salon-yasmin#readme",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "qrcode-generator": "^2.0.4"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "esbuild": "^0.28.2",
+    "firebase-tools": "^15.34.1",
+    "google-auth-library": "^11.3.1"
+  },
+  "type": "module"
+}

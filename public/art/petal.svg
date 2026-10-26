@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 128 128" width="128" height="128"><defs>
+<radialGradient id="pet" cx="0" cy="0" r="56" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#fff6f9"/><stop offset=".42" stop-color="#fbcfdf"/><stop offset="1" stop-color="#e98bb0"/></radialGradient>
+<radialGradient id="r1" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#fff0f5"/><stop offset=".55" stop-color="#f8bfd4"/><stop offset="1" stop-color="#e486ab"/></radialGradient>
+<radialGradient id="r2" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#ffe3ed"/><stop offset=".55" stop-color="#f3a0c0"/><stop offset="1" stop-color="#d2699a"/></radialGradient>
+<radialGradient id="r3" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#fbc4d8"/><stop offset=".6" stop-color="#e788ae"/><stop offset="1" stop-color="#bf5282"/></radialGradient>
+<linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4e0d0"/><stop offset="1" stop-color="#85b79e"/></linearGradient>
+<linearGradient id="silver" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#cfd3dc"/><stop offset="1" stop-color="#9ea3b0"/></linearGradient>
+<linearGradient id="dai" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#f6f3f7"/><stop offset="1" stop-color="#f4b4cc"/></linearGradient>
+<radialGradient id="gold" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#fff3cf"/><stop offset="1" stop-color="#e8b872"/></radialGradient>
+</defs><path d="M0,-44 C26,-30 30,10 0,44 C-30,10 -26,-30 0,-44Z" fill="url(#r1)" stroke="#d8739d" stroke-opacity=".6" stroke-width="2"/><path d="M0,-34 L0,30" stroke="#e27aa0" stroke-opacity=".4" stroke-width="2.2" stroke-linecap="round"/><path d="M-10,-18 Q-16,0 -8,18" stroke="#fff" stroke-opacity=".6" stroke-width="3" fill="none" stroke-linecap="round"/></svg>
