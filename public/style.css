@@ -397,6 +397,18 @@ button, a, input, select, textarea, label { touch-action: manipulation; }
   .hero { min-height: 128px; padding: 1.3rem 1.6rem; }
 }
 
+/* the top bar has six tabs now: on tablets they get their own row instead of pushing the page wider than the screen */
+@media (min-width: 721px) and (max-width: 1180px) {
+  .topbar-inner { flex-wrap: wrap; gap: .4rem 1rem; }
+  .nav { order: 3; width: 100%; justify-content: space-between; margin: 0; }
+  .logo { margin-inline-end: auto; }
+}
+@media (max-width: 720px) {
+  .nav { overflow-x: auto; scrollbar-width: none; gap: .1rem; }
+  .nav a { padding: .35rem .5rem; font-size: .88rem; white-space: nowrap; }
+}
+body { overflow-x: clip; }   /* nothing should ever make the page scroll sideways (Chrome would also zoom the whole page out) */
+
 /* tablets in either orientation and anything touch-driven */
 @media (max-width: 1100px) and (min-width: 721px) {
   .nav a { padding: .5rem 1rem; }
